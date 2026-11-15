@@ -105,6 +105,7 @@ model Utilisateur {
   livraisonsValidees    Livraison[]           @relation("LivraisonValidation")
   rapportsSaisis        RapportConsommation[] @relation("RapportSaisie")
   rapportsValides       RapportConsommation[] @relation("RapportValidation")
+  rapportsVerifies      RapportConsommation[] @relation("RapportVerification")
   factures              Facture[]
   paiements             Paiement[]
   supervisionsCreees    Supervision[]         @relation("SupervisionSaisie")
@@ -638,10 +639,17 @@ model RapportConsommation {
   dateSoumission  DateTime?
   validePar       Int?
   dateValidation  DateTime?
+  // Vérification sur place par l'agent du district (facultative)
+  dateVerification         DateTime? @db.Date
+  verifiePar               Int?
+  agentsVerification       String?   @db.NVarChar(500)
+  observationsVerification String?   @db.NVarChar(Max)
+  motifRenvoi              String?   @db.NVarChar(500) // renvoi en brouillon pour correction
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   centre      CentreSante  @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  verificateur Utilisateur? @relation("RapportVerification", fields: [verifiePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
   utilisateur Utilisateur  @relation("RapportSaisie", fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   validateur  Utilisateur? @relation("RapportValidation", fields: [validePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
   lignes      LigneConsommation[]
@@ -655,7 +663,9 @@ model LigneConsommation {
   id               Int     @id @default(autoincrement())
   rapportId        Int
   medicamentId     Int
-  quantite         Int
+  quantite         Int     // quantité DÉCLARÉE par le centre
+  quantiteVerifiee Int?    // quantité constatée sur place (si vérification) : c'est elle qui est retenue
+  commentaire      String? @db.NVarChar(255)
   prixUnitaire     Decimal @db.Decimal(18, 2) // prix de vente applicable figé
   montant          Decimal @db.Decimal(18, 2)
 

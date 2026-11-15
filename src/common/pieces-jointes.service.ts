@@ -40,7 +40,8 @@ export const TAILLE_MAX_PIECE = 10 * 1024 * 1024; // 10 Mo
 export const PIECES_ACHATS = ['CommandeFournisseur', 'Reception'] as const;
 export const PIECES_STOCK = ['MouvementStock'] as const;
 export const PIECES_LIVRAISONS = ['CommandeCentre', 'Livraison'] as const;
-export const ENTITES_AVEC_PIECES = [...PIECES_ACHATS, ...PIECES_STOCK, ...PIECES_LIVRAISONS] as const;
+export const PIECES_CONSOMMATIONS = ['RapportConsommation'] as const;
+export const ENTITES_AVEC_PIECES = [...PIECES_ACHATS, ...PIECES_STOCK, ...PIECES_LIVRAISONS, ...PIECES_CONSOMMATIONS] as const;
 
 /** Fichier reçu (forme simplifiée de ce que fournit multer). */
 export interface FichierRecu {
@@ -158,6 +159,7 @@ export class PiecesJointesService {
       MouvementStock: () => this.prisma.mouvementStock.findUnique({ where: { id: entiteId } }),
       CommandeCentre: () => this.prisma.commandeCentre.findUnique({ where: { id: entiteId } }),
       Livraison: () => this.prisma.livraison.findUnique({ where: { id: entiteId } }),
+      RapportConsommation: () => this.prisma.rapportConsommation.findUnique({ where: { id: entiteId } }),
     };
     const existe = await recherches[entiteType]();
     if (!existe) throw new NotFoundException('Document introuvable.');

@@ -26,6 +26,8 @@ import { UtilisateursModule } from './utilisateurs/utilisateurs.module';
 import { AchatsModule } from './achats/achats.module';
 import { StockModule } from './stock/stock.module';
 import { LivraisonsModule } from './livraisons/livraisons.module';
+import { ConsommationsModule } from './consommations/consommations.module';
+import { AccueilModule } from './accueil/accueil.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
@@ -59,6 +61,10 @@ import { AccesGuard } from './auth/acces.guard';
 
     // 05 — Centres de santé : commandes, livraisons, stock théorique des centres
     LivraisonsModule,
+    // 06 — Rapports mensuels de consommation (+ vérification sur place)
+    ConsommationsModule,
+    // Page d'accueil : chiffres clés et badges des tuiles
+    AccueilModule,
 
     // Tâches planifiées (ex. sortie automatique des lots périmés chaque nuit)
     ScheduleModule.forRoot(),
