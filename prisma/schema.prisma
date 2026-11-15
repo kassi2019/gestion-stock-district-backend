@@ -1,0 +1,858 @@
+// =============================================================================
+// Gestion des stocks, consommations et facturation — District sanitaire
+// Base : SQL Server (bd_stock_district)
+//
+// Remarques SQL Server :
+//  - Prisma ne supporte pas les `enum` sur SQL Server : les statuts / types sont
+//    des String dont les valeurs autorisées sont définies dans
+//    src/common/constants (voir commentaires ci-dessous).
+//  - Toutes les relations sont en NoAction/NoAction pour éviter les erreurs
+//    "multiple cascade paths" de SQL Server. Aucune suppression physique des
+//    opérations validées : on passe par des régularisations tracées.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// 3.1 ADMINISTRATION
+// -----------------------------------------------------------------------------
+
+/// Rôles : ADMIN, GESTIONNAIRE_DEPOT, AGENT_SAISIE, COMPTABLE, SUPERVISEUR, RESPONSABLE_DISTRICT
+model Role {
+  id          Int           @id @default(autoincrement())
+  code        String        @unique @db.NVarChar(50)
+  libelle     String        @db.NVarChar(100)
+  description String?       @db.NVarChar(255)
+  /// Droits par module, en JSON : {"parametrage":"MODIFICATION","stock":"LECTURE"}
+  /// (module absent = aucun accès ; l'ADMIN a toujours tous les droits)
+  permissions String?       @db.NVarChar(Max)
+  utilisateurs Utilisateur[]
+
+  @@map("roles")
+}
+
+/// Fonctions du personnel (Pharmacien, Caissière, Agent de saisie...), gérées dans le Paramétrage
+model Fonction {
+  id        Int         @id @default(autoincrement())
+  code      String      @unique @db.NVarChar(30)
+  libelle   String      @db.NVarChar(100)
+  personnel Personnel[]
+
+  @@map("fonctions")
+}
+
+/// Personnel du district et des centres. Un membre du personnel peut avoir
+/// un compte utilisateur (facultatif) : voir Utilisateur.personnelId.
+model Personnel {
+  id         Int      @id @default(autoincrement())
+  matricule  String   @unique @db.NVarChar(30)
+  nom        String   @db.NVarChar(100)
+  prenoms    String?  @db.NVarChar(150)
+  /// Fonction (table fonctions : Pharmacien, Caissière...), gérée dans le Paramétrage
+  fonctionId Int?
+  /// Lieu d'affectation : un centre de santé (vide = district / siège)
+  centreId   Int?
+  telephone  String?  @db.NVarChar(30)
+  email      String?  @db.NVarChar(150)
+  /// Photo d'identité : image JPEG carrée (256 px) au format « data:image/jpeg;base64,... »
+  photo      String?  @db.NVarChar(Max)
+  actif      Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  centre   CentreSante? @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  fonction Fonction?    @relation(fields: [fonctionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  /// Compte(s) utilisateur : au plus UN (règle vérifiée dans le service)
+  comptes Utilisateur[]
+
+  @@map("personnel")
+}
+
+model Utilisateur {
+  id                Int       @id @default(autoincrement())
+  login             String    @unique @db.NVarChar(50)
+  motDePasseHash    String    @db.NVarChar(255)
+  nom               String    @db.NVarChar(100)
+  prenoms           String?   @db.NVarChar(150)
+  email             String?   @db.NVarChar(150)
+  telephone         String?   @db.NVarChar(30)
+  fonction          String?   @db.NVarChar(100)
+  roleId            Int
+  /// Membre du personnel titulaire du compte (nom, fonction, contacts : recopiés depuis sa fiche)
+  personnelId       Int?
+  actif             Boolean   @default(true)
+  derniereConnexion DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  role      Role       @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  personnel Personnel? @relation(fields: [personnelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  journal               JournalAudit[]
+  mouvementsDepot       MouvementStock[]
+  mouvementsCentre      MouvementStockCentre[]
+  commandesFournisseur  CommandeFournisseur[]
+  receptions            Reception[]           @relation("ReceptionSaisie")
+  receptionsValidees    Reception[]           @relation("ReceptionValidation")
+  livraisons            Livraison[]           @relation("LivraisonSaisie")
+  livraisonsValidees    Livraison[]           @relation("LivraisonValidation")
+  rapportsSaisis        RapportConsommation[] @relation("RapportSaisie")
+  rapportsValides       RapportConsommation[] @relation("RapportValidation")
+  factures              Facture[]
+  paiements             Paiement[]
+  supervisionsCreees    Supervision[]         @relation("SupervisionSaisie")
+  supervisionsValidees  Supervision[]         @relation("SupervisionValidation")
+  supervisionAgents     SupervisionAgent[]
+  inventairesDepot      InventaireDepot[]     @relation("InventaireSaisie")
+  inventairesValides    InventaireDepot[]     @relation("InventaireValidation")
+  piecesJointes         PieceJointe[]
+
+  @@map("utilisateurs")
+}
+
+/// Paramètres généraux (clé/valeur) : expiration session, délai alerte péremption,
+/// prix de vente uniques ou par centre, préfixes de numérotation, etc.
+model Parametre {
+  cle         String   @id @db.NVarChar(100)
+  valeur      String   @db.NVarChar(Max)
+  description String?  @db.NVarChar(255)
+  updatedAt   DateTime @updatedAt
+
+  @@map("parametres")
+}
+
+/// Compteurs pour la numérotation des pièces (FAC-2026-00001, BL-2026-00001, ...)
+model Compteur {
+  id     Int    @id @default(autoincrement())
+  type   String @db.NVarChar(30) // FACTURE, BL, BR, BCF, RECU, SUP, INV
+  annee  Int
+  valeur Int    @default(0)
+
+  @@unique([type, annee])
+  @@map("compteurs")
+}
+
+/// Types de centres de santé (CSU, CSR, Dispensaire, Maternité...), gérés dans le Paramétrage
+model TypeCentre {
+  id          Int           @id @default(autoincrement())
+  code        String        @unique @db.NVarChar(30)
+  libelle     String        @db.NVarChar(100)
+  description String?       @db.NVarChar(255)
+  centres     CentreSante[]
+
+  @@map("types_centre")
+}
+
+model CentreSante {
+  id           Int      @id @default(autoincrement())
+  code         String   @unique @db.NVarChar(30)
+  nom          String   @db.NVarChar(150)
+  typeId       Int?     // type de centre (table types_centre)
+  localite     String?  @db.NVarChar(100)
+  adresse      String?  @db.NVarChar(255)
+  /// Coordonnées GPS (degrés décimaux, ex. latitude 5.3600, longitude -4.0083 pour Abidjan)
+  latitude     Decimal? @db.Decimal(9, 6)
+  longitude    Decimal? @db.Decimal(9, 6)
+  responsable  String?  @db.NVarChar(150)
+  telephone    String?  @db.NVarChar(30)
+  email        String?  @db.NVarChar(150)
+  actif        Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  type TypeCentre? @relation(fields: [typeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  prixVente      PrixVente[]
+  stocks         StockCentre[]
+  mouvements     MouvementStockCentre[]
+  commandes      CommandeCentre[]
+  livraisons     Livraison[]
+  rapports       RapportConsommation[]
+  factures       Facture[]
+  paiements      Paiement[]
+  supervisions   Supervision[]
+  personnel      Personnel[]
+
+  @@map("centres_sante")
+}
+
+model Fournisseur {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique @db.NVarChar(30)
+  raisonSociale String @db.NVarChar(150)
+  contact     String?  @db.NVarChar(150)
+  telephone   String?  @db.NVarChar(30)
+  email       String?  @db.NVarChar(150)
+  adresse     String?  @db.NVarChar(255)
+  actif       Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  prixAchat  PrixAchat[]
+  commandes  CommandeFournisseur[]
+  receptions Reception[]
+
+  @@map("fournisseurs")
+}
+
+model FamilleProduit {
+  id          Int          @id @default(autoincrement())
+  code        String       @unique @db.NVarChar(30)
+  libelle     String       @db.NVarChar(100)
+  categorie   String?      @db.NVarChar(100)
+  medicaments Medicament[]
+
+  @@map("familles_produits")
+}
+
+/// Formes de médicaments (Comprimé, Sirop, Injectable...), gérées dans le Paramétrage
+model FormeMedicament {
+  id          Int          @id @default(autoincrement())
+  code        String       @unique @db.NVarChar(30)
+  libelle     String       @db.NVarChar(100)
+  medicaments Medicament[]
+
+  @@map("formes_medicament")
+}
+
+/// Unités de vente (Boîte, Plaque, Flacon...), gérées dans le Paramétrage.
+/// Le prix de vente d'un médicament s'applique à son unité de vente.
+model UniteVente {
+  id          Int          @id @default(autoincrement())
+  code        String       @unique @db.NVarChar(30)
+  libelle     String       @db.NVarChar(100)
+  medicaments Medicament[]
+
+  @@map("unites_vente")
+}
+
+model Medicament {
+  id                Int      @id @default(autoincrement())
+  code              String   @unique @db.NVarChar(30)
+  designation       String   @db.NVarChar(200)
+  formeId           Int?     // forme (table formes_medicament : comprimé, sirop...)
+  dosage            String?  @db.NVarChar(50)
+  unite             String   @db.NVarChar(30)  // unité de dispensation
+  conditionnement   String?  @db.NVarChar(100)
+  familleId         Int?
+  seuilAlerte       Int      @default(0)        // stock minimum dépôt
+  suiviLot          Boolean  @default(true)     // lot + péremption obligatoires
+  /// Consommable (coton, alcool...) : pas facturé en caisse pharmacie (montant = 0)
+  consommable       Boolean  @default(false)
+  /// Unité de vente (table unites_vente : Boîte, Plaque, Flacon...) — le prix de vente s'applique à cette unité
+  uniteVenteId      Int?
+  actif             Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  famille FamilleProduit? @relation(fields: [familleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  forme   FormeMedicament? @relation(fields: [formeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  uniteVente UniteVente? @relation(fields: [uniteVenteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  prixAchat           PrixAchat[]
+  prixVente           PrixVente[]
+  lots                Lot[]
+  stocksDepot         StockDepot[]
+  mouvements          MouvementStock[]
+  stocksCentre        StockCentre[]
+  mouvementsCentre    MouvementStockCentre[]
+  lignesCmdFourn      LigneCommandeFournisseur[]
+  lignesReception     LigneReception[]
+  lignesCmdCentre     LigneCommandeCentre[]
+  lignesLivraison     LigneLivraison[]
+  lignesConsommation  LigneConsommation[]
+  lignesFacture       LigneFacture[]
+  lignesSupervision   LigneSupervision[]
+  lignesInventaire    LigneInventaireDepot[]
+
+  @@map("medicaments")
+}
+
+// -----------------------------------------------------------------------------
+// 5. PRIX (historisés, avec dates d'effet)
+// -----------------------------------------------------------------------------
+
+model PrixAchat {
+  id            Int       @id @default(autoincrement())
+  medicamentId  Int
+  fournisseurId Int?
+  prix          Decimal   @db.Decimal(18, 2)
+  dateEffet     DateTime  @db.Date
+  dateFin       DateTime? @db.Date
+  createdAt     DateTime  @default(now())
+
+  medicament  Medicament   @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  fournisseur Fournisseur? @relation(fields: [fournisseurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([medicamentId, dateEffet])
+  @@map("prix_achat")
+}
+
+/// centreId NULL = prix général applicable à tous les centres
+model PrixVente {
+  id           Int       @id @default(autoincrement())
+  medicamentId Int
+  centreId     Int?
+  prix         Decimal   @db.Decimal(18, 2)
+  dateEffet    DateTime  @db.Date
+  dateFin      DateTime? @db.Date
+  createdAt    DateTime  @default(now())
+
+  medicament Medicament   @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  centre     CentreSante? @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([medicamentId, centreId, dateEffet])
+  @@map("prix_vente")
+}
+
+// -----------------------------------------------------------------------------
+// 3.2 ACHATS / APPROVISIONNEMENTS
+// -----------------------------------------------------------------------------
+
+/// statut : BROUILLON, VALIDEE, PARTIELLEMENT_RECUE, RECUE, ANNULEE
+model CommandeFournisseur {
+  id             Int       @id @default(autoincrement())
+  numero         String    @unique @db.NVarChar(30)
+  fournisseurId  Int
+  dateCommande   DateTime  @db.Date
+  statut         String    @default("BROUILLON") @db.NVarChar(30)
+  montantTotal   Decimal   @default(0) @db.Decimal(18, 2)
+  observations   String?   @db.NVarChar(Max)
+  utilisateurId  Int
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  fournisseur Fournisseur @relation(fields: [fournisseurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lignes      LigneCommandeFournisseur[]
+  receptions  Reception[]
+
+  @@map("commandes_fournisseur")
+}
+
+model LigneCommandeFournisseur {
+  id              Int     @id @default(autoincrement())
+  commandeId      Int
+  medicamentId    Int
+  quantite        Int
+  quantiteRecue   Int     @default(0)
+  prixUnitaire    Decimal @db.Decimal(18, 2)
+  montant         Decimal @db.Decimal(18, 2)
+
+  commande   CommandeFournisseur @relation(fields: [commandeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  medicament Medicament          @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("lignes_commande_fournisseur")
+}
+
+/// statut : BROUILLON, VALIDEE, ANNULEE  — le stock n'est mis à jour qu'à la validation
+model Reception {
+  id                Int       @id @default(autoincrement())
+  numero            String    @unique @db.NVarChar(30) // n° bon de réception
+  commandeId        Int?
+  fournisseurId     Int
+  dateReception     DateTime  @db.Date
+  numFactureFourn   String?   @db.NVarChar(50)
+  numBonLivraison   String?   @db.NVarChar(50)
+  statut            String    @default("BROUILLON") @db.NVarChar(30)
+  montantTotal      Decimal   @default(0) @db.Decimal(18, 2)
+  observations      String?   @db.NVarChar(Max)
+  utilisateurId     Int
+  validePar         Int?
+  dateValidation    DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  commande    CommandeFournisseur? @relation(fields: [commandeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  fournisseur Fournisseur          @relation(fields: [fournisseurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur Utilisateur          @relation("ReceptionSaisie", fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  validateur  Utilisateur?         @relation("ReceptionValidation", fields: [validePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lignes      LigneReception[]
+
+  @@map("receptions")
+}
+
+model LigneReception {
+  id             Int       @id @default(autoincrement())
+  receptionId    Int
+  medicamentId   Int
+  lotId          Int?
+  numeroLot      String?   @db.NVarChar(50)
+  datePeremption DateTime? @db.Date
+  quantite       Int
+  prixUnitaire   Decimal   @db.Decimal(18, 2)
+  montant        Decimal   @db.Decimal(18, 2)
+
+  reception  Reception  @relation(fields: [receptionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  medicament Medicament @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lot        Lot?       @relation(fields: [lotId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("lignes_reception")
+}
+
+// -----------------------------------------------------------------------------
+// 3.3 DÉPÔT ET STOCKS
+// -----------------------------------------------------------------------------
+
+model Lot {
+  id             Int       @id @default(autoincrement())
+  medicamentId   Int
+  numeroLot      String    @db.NVarChar(50)
+  datePeremption DateTime? @db.Date
+  createdAt      DateTime  @default(now())
+
+  medicament        Medicament             @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stocksDepot       StockDepot[]
+  mouvements        MouvementStock[]
+  lignesReception   LigneReception[]
+  lignesLivraison   LigneLivraison[]
+  lignesSupervision LigneSupervision[]
+  lignesInventaire  LigneInventaireDepot[]
+
+  @@unique([medicamentId, numeroLot])
+  @@map("lots")
+}
+
+/// Stock courant du dépôt (par médicament et par lot ; lotId NULL si pas de suivi par lot)
+model StockDepot {
+  id           Int      @id @default(autoincrement())
+  medicamentId Int
+  lotId        Int?
+  quantite     Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  medicament Medicament @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lot        Lot?       @relation(fields: [lotId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([medicamentId, lotId])
+  @@map("stocks_depot")
+}
+
+/// type : ENTREE_RECEPTION, SORTIE_LIVRAISON, AJUSTEMENT_POSITIF, AJUSTEMENT_NEGATIF,
+///        TRANSFERT_ENTREE, TRANSFERT_SORTIE, INVENTAIRE_POSITIF, INVENTAIRE_NEGATIF,
+///        PERIME, REGULARISATION
+/// sourceType/sourceId : pièce à l'origine du mouvement (RECEPTION, LIVRAISON, INVENTAIRE, ...)
+model MouvementStock {
+  id             Int      @id @default(autoincrement())
+  dateMouvement  DateTime @default(now())
+  type           String   @db.NVarChar(30)
+  medicamentId   Int
+  lotId          Int?
+  quantite       Int      // toujours positive ; le sens est donné par le type
+  stockAvant     Int
+  stockApres     Int
+  prixUnitaire   Decimal? @db.Decimal(18, 2)
+  motif          String?  @db.NVarChar(255)
+  pieceRef       String?  @db.NVarChar(50)
+  sourceType     String?  @db.NVarChar(30)
+  sourceId       Int?
+  utilisateurId  Int
+
+  medicament  Medicament  @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lot         Lot?        @relation(fields: [lotId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([medicamentId, dateMouvement])
+  @@index([sourceType, sourceId])
+  @@map("mouvements_stock")
+}
+
+/// statut : EN_COURS, VALIDE, ANNULE
+model InventaireDepot {
+  id              Int       @id @default(autoincrement())
+  numero          String    @unique @db.NVarChar(30)
+  dateInventaire  DateTime  @db.Date
+  statut          String    @default("EN_COURS") @db.NVarChar(30)
+  observations    String?   @db.NVarChar(Max)
+  utilisateurId   Int
+  validePar       Int?
+  dateValidation  DateTime?
+  createdAt       DateTime  @default(now())
+
+  utilisateur Utilisateur  @relation("InventaireSaisie", fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  validateur  Utilisateur? @relation("InventaireValidation", fields: [validePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lignes      LigneInventaireDepot[]
+
+  @@map("inventaires_depot")
+}
+
+model LigneInventaireDepot {
+  id               Int     @id @default(autoincrement())
+  inventaireId     Int
+  medicamentId     Int
+  lotId            Int?
+  stockTheorique   Int
+  stockPhysique    Int
+  ecart            Int
+  prixUnitaire     Decimal? @db.Decimal(18, 2)
+  valeurEcart      Decimal? @db.Decimal(18, 2)
+  commentaire      String?  @db.NVarChar(255)
+
+  inventaire InventaireDepot @relation(fields: [inventaireId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  medicament Medicament      @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lot        Lot?            @relation(fields: [lotId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("lignes_inventaire_depot")
+}
+
+// -----------------------------------------------------------------------------
+// 3.4 CENTRES : COMMANDES, LIVRAISONS, STOCK THÉORIQUE
+// -----------------------------------------------------------------------------
+
+/// statut : BROUILLON, SOUMISE, VALIDEE, PREPAREE, LIVREE, ANNULEE
+model CommandeCentre {
+  id            Int      @id @default(autoincrement())
+  numero        String   @unique @db.NVarChar(30)
+  centreId      Int
+  dateCommande  DateTime @db.Date
+  statut        String   @default("BROUILLON") @db.NVarChar(30)
+  observations  String?  @db.NVarChar(Max)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  centre     CentreSante @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lignes     LigneCommandeCentre[]
+  livraisons Livraison[]
+
+  @@map("commandes_centre")
+}
+
+model LigneCommandeCentre {
+  id                 Int @id @default(autoincrement())
+  commandeId         Int
+  medicamentId       Int
+  quantiteDemandee   Int
+  quantiteAccordee   Int?
+
+  commande   CommandeCentre @relation(fields: [commandeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  medicament Medicament     @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("lignes_commande_centre")
+}
+
+/// statut : BROUILLON, PREPAREE, VALIDEE (livrée : stock dépôt -, stock centre +), ANNULEE
+model Livraison {
+  id              Int       @id @default(autoincrement())
+  numero          String    @unique @db.NVarChar(30) // n° bon de livraison
+  centreId        Int
+  commandeId      Int?
+  dateLivraison   DateTime  @db.Date
+  statut          String    @default("BROUILLON") @db.NVarChar(30)
+  montantTotal    Decimal   @default(0) @db.Decimal(18, 2)
+  observations    String?   @db.NVarChar(Max)
+  utilisateurId   Int
+  validePar       Int?
+  dateValidation  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  centre      CentreSante     @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  commande    CommandeCentre? @relation(fields: [commandeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur Utilisateur     @relation("LivraisonSaisie", fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  validateur  Utilisateur?    @relation("LivraisonValidation", fields: [validePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lignes      LigneLivraison[]
+
+  @@map("livraisons")
+}
+
+model LigneLivraison {
+  id                Int     @id @default(autoincrement())
+  livraisonId       Int
+  medicamentId      Int
+  lotId             Int?
+  quantitePreparee  Int
+  quantiteLivree    Int
+  prixUnitaire      Decimal @db.Decimal(18, 2) // prix de vente figé à la livraison
+  montant           Decimal @db.Decimal(18, 2)
+
+  livraison  Livraison  @relation(fields: [livraisonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  medicament Medicament @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lot        Lot?       @relation(fields: [lotId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("lignes_livraison")
+}
+
+/// Stock théorique courant de chaque centre
+model StockCentre {
+  id                Int      @id @default(autoincrement())
+  centreId          Int
+  medicamentId      Int
+  quantiteTheorique Int      @default(0)
+  updatedAt         DateTime @updatedAt
+
+  centre     CentreSante @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  medicament Medicament  @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([centreId, medicamentId])
+  @@map("stocks_centre")
+}
+
+/// type : LIVRAISON, CONSOMMATION, ECART_SUPERVISION, REGULARISATION
+model MouvementStockCentre {
+  id             Int      @id @default(autoincrement())
+  dateMouvement  DateTime @default(now())
+  type           String   @db.NVarChar(30)
+  centreId       Int
+  medicamentId   Int
+  quantite       Int      // signée : + entrée, - sortie
+  stockAvant     Int
+  stockApres     Int
+  motif          String?  @db.NVarChar(255)
+  sourceType     String?  @db.NVarChar(30)
+  sourceId       Int?
+  utilisateurId  Int
+
+  centre      CentreSante @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  medicament  Medicament  @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([centreId, medicamentId, dateMouvement])
+  @@map("mouvements_stock_centre")
+}
+
+// -----------------------------------------------------------------------------
+// 3.5 RAPPORTS MENSUELS DE CONSOMMATION
+// -----------------------------------------------------------------------------
+
+/// statut : BROUILLON, SOUMIS, VALIDE, FACTURE
+model RapportConsommation {
+  id              Int       @id @default(autoincrement())
+  numero          String    @unique @db.NVarChar(30)
+  centreId        Int
+  annee           Int
+  mois            Int
+  statut          String    @default("BROUILLON") @db.NVarChar(30)
+  montantTotal    Decimal   @default(0) @db.Decimal(18, 2)
+  observations    String?   @db.NVarChar(Max)
+  utilisateurId   Int
+  dateSoumission  DateTime?
+  validePar       Int?
+  dateValidation  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  centre      CentreSante  @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur Utilisateur  @relation("RapportSaisie", fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  validateur  Utilisateur? @relation("RapportValidation", fields: [validePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lignes      LigneConsommation[]
+  facture     Facture?
+
+  @@unique([centreId, annee, mois])
+  @@map("rapports_consommation")
+}
+
+model LigneConsommation {
+  id               Int     @id @default(autoincrement())
+  rapportId        Int
+  medicamentId     Int
+  quantite         Int
+  prixUnitaire     Decimal @db.Decimal(18, 2) // prix de vente applicable figé
+  montant          Decimal @db.Decimal(18, 2)
+
+  rapport    RapportConsommation @relation(fields: [rapportId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  medicament Medicament          @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([rapportId, medicamentId])
+  @@map("lignes_consommation")
+}
+
+// -----------------------------------------------------------------------------
+// 3.6 FACTURATION ET COMPTES CLIENTS
+// -----------------------------------------------------------------------------
+
+/// type   : CONSOMMATION, ECART_SUPERVISION, AVOIR
+/// statut : EMISE, PARTIELLEMENT_PAYEE, PAYEE, ANNULEE
+model Facture {
+  id             Int       @id @default(autoincrement())
+  numero         String    @unique @db.NVarChar(30)
+  type           String    @default("CONSOMMATION") @db.NVarChar(30)
+  centreId       Int
+  rapportId      Int?      @unique
+  supervisionId  Int?      @unique
+  dateEmission   DateTime  @db.Date
+  dateEcheance   DateTime? @db.Date
+  montantTotal   Decimal   @db.Decimal(18, 2)
+  montantPaye    Decimal   @default(0) @db.Decimal(18, 2)
+  statut         String    @default("EMISE") @db.NVarChar(30)
+  motifAnnulation String?  @db.NVarChar(255)
+  utilisateurId  Int
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  centre      CentreSante          @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  rapport     RapportConsommation? @relation(fields: [rapportId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  supervision Supervision?         @relation(fields: [supervisionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur Utilisateur          @relation(fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lignes      LigneFacture[]
+  imputations Imputation[]
+
+  @@index([centreId, dateEmission])
+  @@map("factures")
+}
+
+model LigneFacture {
+  id            Int     @id @default(autoincrement())
+  factureId     Int
+  medicamentId  Int
+  quantite      Int
+  prixUnitaire  Decimal @db.Decimal(18, 2)
+  montant       Decimal @db.Decimal(18, 2)
+
+  facture    Facture    @relation(fields: [factureId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  medicament Medicament @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("lignes_facture")
+}
+
+/// type : PAIEMENT, AVANCE ; mode : ESPECES, CHEQUE, VIREMENT, MOBILE_MONEY
+/// montantNonImpute = avance disponible restant à imputer
+model Paiement {
+  id               Int      @id @default(autoincrement())
+  numero           String   @unique @db.NVarChar(30) // n° reçu
+  centreId         Int
+  datePaiement     DateTime @db.Date
+  montant          Decimal  @db.Decimal(18, 2)
+  montantNonImpute Decimal  @default(0) @db.Decimal(18, 2)
+  type             String   @default("PAIEMENT") @db.NVarChar(20)
+  mode             String   @db.NVarChar(20)
+  reference        String?  @db.NVarChar(100)
+  observations     String?  @db.NVarChar(255)
+  annule           Boolean  @default(false)
+  utilisateurId    Int
+  createdAt        DateTime @default(now())
+
+  centre      CentreSante  @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur Utilisateur  @relation(fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  imputations Imputation[]
+
+  @@index([centreId, datePaiement])
+  @@map("paiements")
+}
+
+/// Affectation d'un paiement (ou d'une avance) à une facture
+model Imputation {
+  id         Int      @id @default(autoincrement())
+  paiementId Int
+  factureId  Int
+  montant    Decimal  @db.Decimal(18, 2)
+  date       DateTime @default(now())
+
+  paiement Paiement @relation(fields: [paiementId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  facture  Facture  @relation(fields: [factureId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("imputations")
+}
+
+// -----------------------------------------------------------------------------
+// 3.7 SUPERVISIONS / INVENTAIRES DANS LES CENTRES
+// constat -> validation -> décision (aucune / régularisation stock / facturation)
+// -----------------------------------------------------------------------------
+
+/// statut   : BROUILLON, SOUMISE, VALIDEE, CLOTUREE
+/// decision : AUCUNE, REGULARISATION_STOCK, FACTURATION
+model Supervision {
+  id               Int       @id @default(autoincrement())
+  numero           String    @unique @db.NVarChar(30)
+  centreId         Int
+  dateSupervision  DateTime  @db.Date
+  statut           String    @default("BROUILLON") @db.NVarChar(30)
+  observations     String?   @db.NVarChar(Max)
+  valeurEcartTotal Decimal   @default(0) @db.Decimal(18, 2)
+  decision         String?   @db.NVarChar(30)
+  motifDecision    String?   @db.NVarChar(Max)
+  utilisateurId    Int
+  validePar        Int?
+  dateValidation   DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  centre      CentreSante  @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur Utilisateur  @relation("SupervisionSaisie", fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  validateur  Utilisateur? @relation("SupervisionValidation", fields: [validePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  agents      SupervisionAgent[]
+  lignes      LigneSupervision[]
+  facture     Facture?
+
+  @@map("supervisions")
+}
+
+/// Agents présents : utilisateur de l'application ou personne externe (nom libre)
+model SupervisionAgent {
+  id            Int     @id @default(autoincrement())
+  supervisionId Int
+  utilisateurId Int?
+  nom           String? @db.NVarChar(150)
+  fonction      String? @db.NVarChar(100)
+
+  supervision Supervision  @relation(fields: [supervisionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur Utilisateur? @relation(fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("supervision_agents")
+}
+
+model LigneSupervision {
+  id              Int      @id @default(autoincrement())
+  supervisionId   Int
+  medicamentId    Int
+  lotId           Int?
+  stockTheorique  Int
+  stockPhysique   Int
+  ecart           Int      // physique - théorique
+  prixUnitaire    Decimal? @db.Decimal(18, 2)
+  valeurEcart     Decimal? @db.Decimal(18, 2)
+  commentaire     String?  @db.NVarChar(255)
+
+  supervision Supervision @relation(fields: [supervisionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  medicament  Medicament  @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lot         Lot?        @relation(fields: [lotId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("lignes_supervision")
+}
+
+// -----------------------------------------------------------------------------
+// TRANSVERSAL : pièces jointes et journal d'audit
+// -----------------------------------------------------------------------------
+
+/// entiteType : RECEPTION, RAPPORT_CONSOMMATION, SUPERVISION, PAIEMENT, MOUVEMENT, ...
+model PieceJointe {
+  id            Int      @id @default(autoincrement())
+  entiteType    String   @db.NVarChar(50)
+  entiteId      Int
+  libelle       String?  @db.NVarChar(150)
+  nomFichier    String   @db.NVarChar(255)
+  chemin        String   @db.NVarChar(500)
+  mimeType      String?  @db.NVarChar(100)
+  taille        Int?
+  utilisateurId Int
+  createdAt     DateTime @default(now())
+
+  utilisateur Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([entiteType, entiteId])
+  @@map("pieces_jointes")
+}
+
+model JournalAudit {
+  id            Int      @id @default(autoincrement())
+  dateAction    DateTime @default(now())
+  utilisateurId Int?
+  action        String   @db.NVarChar(50)  // CREATION, MODIFICATION, VALIDATION, ANNULATION, CONNEXION...
+  entite        String   @db.NVarChar(50)
+  entiteId      String?  @db.NVarChar(50)
+  valeursAvant  String?  @db.NVarChar(Max) // JSON
+  valeursApres  String?  @db.NVarChar(Max) // JSON
+  adresseIp     String?  @db.NVarChar(50)
+
+  utilisateur Utilisateur? @relation(fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([entite, entiteId])
+  @@index([dateAction])
+  @@map("journal_audit")
+}
