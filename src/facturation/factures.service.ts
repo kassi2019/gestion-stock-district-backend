@@ -15,6 +15,11 @@
  * ANNULATION (motif obligatoire) : seulement si AUCUN paiement n'est imputé.
  *   Le rapport redevient VALIDE (il peut être refacturé) ; la facture annulée
  *   reste dans l'historique (rapport d'origine conservé dans rapportOrigineId).
+ *   Facture d'ÉCART DE SUPERVISION annulée : la décision de la supervision
+ *   devient « régularisation du stock » (le stock a déjà été aligné).
+ *
+ * Les factures d'écart de supervision (type ECART_SUPERVISION) sont créées
+ * par le module Supervisions (décision « facturation »).
  * =============================================================================
  */
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
@@ -83,6 +88,7 @@ export class FacturesService {
       include: {
         centre: { select: { id: true, code: true, nom: true } },
         rapport: { select: { id: true, numero: true, annee: true, mois: true } },
+        supervision: { select: { id: true, numero: true, dateSupervision: true } },
       },
       orderBy: [{ dateEmission: 'desc' }, { id: 'desc' }],
     });
@@ -99,6 +105,7 @@ export class FacturesService {
       include: {
         centre: { include: { type: { select: { libelle: true } } } },
         rapport: { select: { id: true, numero: true, annee: true, mois: true, dateVerification: true } },
+        supervision: { select: { id: true, numero: true, dateSupervision: true } },
         utilisateur: PERSONNE,
         lignes: {
           include: { medicament: { select: { code: true, designation: true, uniteVente: { select: { libelle: true } } } } },
@@ -113,9 +120,12 @@ export class FacturesService {
     });
     if (!facture) throw new NotFoundException('Facture introuvable.');
     // Rapport d'origine d'une facture annulée + auteur de l'annulation
-    const [rapportOrigine, annulateur] = await Promise.all([
+    const [rapportOrigine, supervisionOrigine, annulateur] = await Promise.all([
       facture.rapportOrigineId
         ? this.prisma.rapportConsommation.findUnique({ where: { id: facture.rapportOrigineId }, select: { id: true, numero: true, annee: true, mois: true } })
+        : null,
+      facture.supervisionOrigineId
+        ? this.prisma.supervision.findUnique({ where: { id: facture.supervisionOrigineId }, select: { id: true, numero: true, dateSupervision: true } })
         : null,
       facture.annulePar ? this.prisma.utilisateur.findUnique({ where: { id: facture.annulePar }, select: { nom: true, prenoms: true } }) : null,
     ]);
@@ -128,6 +138,7 @@ export class FacturesService {
     return {
       ...facture,
       rapport: facture.rapport ?? rapportOrigine,
+      supervision: facture.supervision ?? supervisionOrigine,
       annulateur,
       solde,
       enRetard: solde > 0 && !!facture.dateEcheance && facture.dateEcheance < aujourdhui(),
@@ -226,9 +237,22 @@ export class FacturesService {
           // Le rapport est libéré (refacturable) mais reste mémorisé
           rapportId: null,
           rapportOrigineId: avant.rapportId,
+          supervisionId: null,
+          supervisionOrigineId: avant.supervisionId,
         },
       });
       if (avant.rapportId) await tx.rapportConsommation.update({ where: { id: avant.rapportId }, data: { statut: SR.VALIDE } });
+      // Facture d'écart de supervision : le stock reste régularisé, la décision change
+      if (avant.supervisionId) {
+        const sup = await tx.supervision.findUniqueOrThrow({ where: { id: avant.supervisionId } });
+        await tx.supervision.update({
+          where: { id: avant.supervisionId },
+          data: {
+            decision: 'REGULARISATION_STOCK',
+            motifDecision: `${sup.motifDecision ?? ''}\n[Facture ${avant.numero} annulée le ${new Date().toLocaleDateString('fr-FR')} : ${motif.trim()}]`.trim(),
+          },
+        });
+      }
       await this.audit.enregistrer({ utilisateurId, action: 'ANNULATION', entite: 'Facture', entiteId: id, avant, apres }, tx);
     });
     return this.trouver(id);

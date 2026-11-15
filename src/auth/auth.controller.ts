@@ -7,7 +7,7 @@
  *
  * Routes disponibles :
  *   POST /api/auth/login  -> connexion (accessible sans être connecté)
- *   GET  /api/auth/moi    -> informations de l'utilisateur connecté
+ *   GET  /api/auth/moi    -> informations de l'utilisateur connecté (+ délai d'inactivité)
  * =============================================================================
  */
 import { Body, Controller, Get, Ip, Post } from '@nestjs/common';
@@ -30,10 +30,12 @@ export class AuthController {
 
   /**
    * Renvoie l'utilisateur connecté (permet au frontend de vérifier la session),
-   * avec ses droits et sa photo (fiche personnel).
+   * avec ses droits, sa photo (fiche personnel) et le délai d'inactivité avant
+   * déconnexion automatique (minutes, paramètre général).
    */
   @Get('moi')
   async moi(@UtilisateurCourant() utilisateur: UtilisateurConnecte) {
-    return { ...utilisateur, photo: await this.authService.photo(utilisateur.id) };
+    const [photo, delaiInactivite] = await Promise.all([this.authService.photo(utilisateur.id), this.authService.delaiInactivite()]);
+    return { ...utilisateur, photo, delaiInactivite };
   }
 }

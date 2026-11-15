@@ -29,6 +29,8 @@ import { LivraisonsModule } from './livraisons/livraisons.module';
 import { ConsommationsModule } from './consommations/consommations.module';
 import { AccueilModule } from './accueil/accueil.module';
 import { FacturationModule } from './facturation/facturation.module';
+import { SupervisionsModule } from './supervisions/supervisions.module';
+import { EtatsModule } from './etats/etats.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
@@ -66,6 +68,10 @@ import { AccesGuard } from './auth/acces.guard';
     ConsommationsModule,
     // 07 — Facturation, paiements, avances, comptes des centres
     FacturationModule,
+    // 08 — Supervisions et inventaires dans les centres
+    SupervisionsModule,
+    // 09 — Tableau de bord et états (lecture seule)
+    EtatsModule,
     // Page d'accueil : chiffres clés et badges des tuiles
     AccueilModule,
 

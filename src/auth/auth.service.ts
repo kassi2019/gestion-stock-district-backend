@@ -38,6 +38,16 @@ export class AuthService {
   }
 
   /**
+   * Délai d'inactivité avant déconnexion automatique, en minutes
+   * (paramètre SESSION_EXPIRATION_MINUTES ; 0 = pas de déconnexion automatique).
+   */
+  async delaiInactivite(): Promise<number> {
+    const p = await this.prisma.parametre.findUnique({ where: { cle: 'SESSION_EXPIRATION_MINUTES' } });
+    const minutes = Number(p?.valeur);
+    return Number.isFinite(minutes) && minutes >= 0 ? Math.round(minutes) : 30;
+  }
+
+  /**
    * Connecte un utilisateur.
    * @returns le jeton de connexion et les informations de l'utilisateur
    */

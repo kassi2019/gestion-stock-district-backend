@@ -55,6 +55,7 @@ const parametres = [
   { cle: 'PRIX_VENTE_PAR_CENTRE', valeur: 'false', description: 'Autoriser des prix de vente spécifiques par centre' },
   { cle: 'DEVISE', valeur: 'FCFA', description: 'Devise' },
   { cle: 'NOM_DISTRICT', valeur: 'District sanitaire', description: 'Nom affiché sur les documents' },
+  { cle: 'VALORISATION_ECARTS', valeur: 'PRIX_VENTE', description: 'Prix utilisé pour valoriser les écarts de supervision (PRIX_VENTE ou PRIX_ACHAT)' },
   { cle: 'DELAI_PAIEMENT_JOURS', valeur: '30', description: 'Délai de paiement des factures (jours après émission)' },
   { cle: 'SORTIE_AUTO_PERIMES', valeur: 'true', description: 'Sortir automatiquement du stock, chaque nuit, les lots périmés' },
   // Informations du district (Paramètres généraux > Informations du district)

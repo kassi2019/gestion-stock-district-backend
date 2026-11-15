@@ -91,7 +91,7 @@ export class PaiementsService {
   async facturesNonSoldees(centreId: number) {
     const factures = await this.prisma.facture.findMany({
       where: { centreId, statut: { in: [SF.EMISE, SF.PARTIELLEMENT_PAYEE] } },
-      include: { rapport: { select: { annee: true, mois: true } } },
+      include: { rapport: { select: { annee: true, mois: true } }, supervision: { select: { numero: true } } },
       orderBy: [{ dateEcheance: 'asc' }, { dateEmission: 'asc' }, { id: 'asc' }],
     });
     const jour = aujourdhui();
@@ -278,7 +278,7 @@ export class PaiementsService {
     const [factures, paiements] = await Promise.all([
       this.prisma.facture.findMany({
         where: { centreId, statut: { not: SF.ANNULEE }, dateEmission: { lte: au } },
-        include: { rapport: { select: { annee: true, mois: true } } },
+        include: { rapport: { select: { annee: true, mois: true } }, supervision: { select: { numero: true } } },
       }),
       this.prisma.paiement.findMany({ where: { centreId, annule: false, datePaiement: { lte: au } } }),
     ]);
@@ -287,7 +287,11 @@ export class PaiementsService {
         date: f.dateEmission,
         type: 'FACTURE' as const,
         numero: f.numero,
-        libelle: f.rapport ? `Facture consommation ${String(f.rapport.mois).padStart(2, '0')}/${f.rapport.annee}` : 'Facture',
+        libelle: f.rapport
+          ? `Facture consommation ${String(f.rapport.mois).padStart(2, '0')}/${f.rapport.annee}`
+          : f.supervision
+            ? `Facture écart de supervision ${f.supervision.numero}`
+            : 'Facture',
         debit: Number(f.montantTotal),
         credit: 0,
         id: f.id,

@@ -696,6 +696,7 @@ model Facture {
   statut         String    @default("EMISE") @db.NVarChar(30)
   motifAnnulation String?  @db.NVarChar(255)
   rapportOrigineId Int?    // facture annulée : rapport d'origine (rapportId vidé pour pouvoir refacturer)
+  supervisionOrigineId Int? // idem pour une facture d'écart de supervision
   annulePar      Int?
   dateAnnulation DateTime?
   utilisateurId  Int
@@ -786,6 +787,9 @@ model Supervision {
   valeurEcartTotal Decimal   @default(0) @db.Decimal(18, 2)
   decision         String?   @db.NVarChar(30)
   motifDecision    String?   @db.NVarChar(Max)
+  decidePar        Int?
+  dateDecision     DateTime?
+  motifRenvoi      String?   @db.NVarChar(500)
   utilisateurId    Int
   validePar        Int?
   dateValidation   DateTime?
