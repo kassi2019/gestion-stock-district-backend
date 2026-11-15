@@ -3,3 +3,6 @@ dist/
 .env
 uploads/
 coverage/
+
+# Pièces jointes (factures, bons de livraison...) : sauvegardées avec la base, pas dans git
+/fichiers

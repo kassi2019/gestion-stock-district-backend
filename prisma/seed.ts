@@ -55,6 +55,7 @@ const parametres = [
   { cle: 'PRIX_VENTE_PAR_CENTRE', valeur: 'false', description: 'Autoriser des prix de vente spécifiques par centre' },
   { cle: 'DEVISE', valeur: 'FCFA', description: 'Devise' },
   { cle: 'NOM_DISTRICT', valeur: 'District sanitaire', description: 'Nom affiché sur les documents' },
+  { cle: 'SORTIE_AUTO_PERIMES', valeur: 'true', description: 'Sortir automatiquement du stock, chaque nuit, les lots périmés' },
   // Informations du district (Paramètres généraux > Informations du district)
   { cle: 'DISTRICT_CODE', valeur: '', description: 'Code du district' },
   { cle: 'DISTRICT_REGION', valeur: '', description: 'Région sanitaire' },

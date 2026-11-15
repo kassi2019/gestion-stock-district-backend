@@ -448,6 +448,9 @@ model MouvementStock {
   quantite       Int      // toujours positive ; le sens est donné par le type
   stockAvant     Int
   stockApres     Int
+  /// Stock du LOT (ou de la ligne sans lot) avant / après le mouvement (fiche d'inventaire)
+  stockLotAvant  Int?
+  stockLotApres  Int?
   prixUnitaire   Decimal? @db.Decimal(18, 2)
   motif          String?  @db.NVarChar(255)
   pieceRef       String?  @db.NVarChar(50)

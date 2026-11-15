@@ -156,6 +156,10 @@ export const TYPE_MOUVEMENT_DEPOT = {
   INVENTAIRE_NEGATIF: 'INVENTAIRE_NEGATIF',
   PERIME: 'PERIME',
   REGULARISATION: 'REGULARISATION',
+  /** Lot compté à l'inventaire SANS écart (quantité 0) : trace du comptage */
+  INVENTAIRE_CONFORME: 'INVENTAIRE_CONFORME',
+  /** Stock « sans lot » rattaché à un lot : le stock TOTAL ne change pas */
+  RATTACHEMENT_LOT: 'RATTACHEMENT_LOT',
 } as const;
 
 /** Types de mouvements du stock THÉORIQUE d'un centre. */

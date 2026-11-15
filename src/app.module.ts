@@ -23,6 +23,9 @@ import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { ParametrageModule } from './parametrage/parametrage.module';
 import { UtilisateursModule } from './utilisateurs/utilisateurs.module';
+import { AchatsModule } from './achats/achats.module';
+import { StockModule } from './stock/stock.module';
+import { ScheduleModule } from '@nestjs/schedule';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 import { AccesGuard } from './auth/acces.guard';
@@ -47,7 +50,16 @@ import { AccesGuard } from './auth/acces.guard';
     // 02 — Utilisateurs : comptes, profils, mots de passe
     UtilisateursModule,
 
-    // ➜ Ajouter ici les prochains modules (achats, stock, ...)
+    // 03 — Approvisionnements et achats : commandes fournisseurs, réceptions, entrée en stock
+    AchatsModule,
+
+    // 04 — Gestion du dépôt et des stocks : état, mouvements, ajustements, inventaires
+    StockModule,
+
+    // Tâches planifiées (ex. sortie automatique des lots périmés chaque nuit)
+    ScheduleModule.forRoot(),
+
+    // ➜ Ajouter ici les prochains modules (livraisons, ...)
   ],
   providers: [
     // Protection n°1 : connexion obligatoire (sauf routes marquées @Public())
