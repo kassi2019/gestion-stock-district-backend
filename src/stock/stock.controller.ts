@@ -14,6 +14,7 @@
  * Droit « Modifier » sur le module Stock :
  *   POST  /api/stock/mouvements                   mouvement manuel (ajustement, périmés, transfert)
  *   POST  /api/stock/perimes/sortir               sortir TOUS les lots périmés (motif, n° de PV)
+ *   PATCH /api/stock/seuil/:medicamentId          modifier le seuil d'alerte d'un médicament
  *   POST  /api/stock/inventaire/comptage          valider le comptage d'un ou plusieurs lots
  *   POST  /api/stock/inventaire/rattacher         rattacher du stock « sans lot » à un lot
  *   POST  /api/stock/pieces/:type/:id             ajouter une pièce jointe (fichier « fichier »)
@@ -27,7 +28,8 @@ import {
   Get,
   Param,
   ParseIntPipe,
-    Post,
+  Patch,
+  Post,
   Query,
   Res,
   UploadedFile,
@@ -40,7 +42,7 @@ import { UtilisateurCourant } from '../auth/current-user.decorator';
 import { UtilisateurConnecte } from '../auth/jwt.strategy';
 import { FichierRecu, PIECES_STOCK, PiecesJointesService, TAILLE_MAX_PIECE } from '../common/pieces-jointes.service';
 import { StockService } from './stock.service';
-import { ComptageDto, CreerMouvementDto, RattacherDto, SortiePerimesDto } from './stock.dto';
+import { ComptageDto, CreerMouvementDto, RattacherDto, SeuilAlerteDto, SortiePerimesDto } from './stock.dto';
 
 function nombre(valeur?: string) {
   return valeur ? Number(valeur) : undefined;
@@ -85,6 +87,17 @@ export class StockController {
   @Post('perimes/sortir')
   sortirPerimes(@Body() dto: SortiePerimesDto, @UtilisateurCourant() moi: UtilisateurConnecte) {
     return this.stock.sortirLotsPerimes(moi.id, { motif: dto.motif, pieceRef: dto.pieceRef, origine: 'MANUEL' });
+  }
+
+  /** Seuil d'alerte d'un médicament (modifiable depuis Stock > État). */
+  @Acces('stock', 'MODIFICATION')
+  @Patch('seuil/:medicamentId')
+  modifierSeuil(
+    @Param('medicamentId', ParseIntPipe) medicamentId: number,
+    @Body() dto: SeuilAlerteDto,
+    @UtilisateurCourant() moi: UtilisateurConnecte,
+  ) {
+    return this.stock.modifierSeuil(medicamentId, dto.seuilAlerte, moi.id);
   }
 
   /** Résumé des alertes de stock (accueil). */

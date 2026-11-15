@@ -134,3 +134,10 @@ export class SortiePerimesDto {
   @IsOptional() @IsString() @MaxLength(50)
   pieceRef?: string;
 }
+
+/** Seuil d'alerte d'un médicament (stock minimum au dépôt ; 0 = pas d'alerte). */
+export class SeuilAlerteDto {
+  @IsInt({ message: 'Le seuil doit être un nombre entier.' })
+  @Min(0, { message: 'Le seuil ne peut pas être négatif.' })
+  seuilAlerte: number;
+}

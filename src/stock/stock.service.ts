@@ -239,6 +239,22 @@ export class StockService {
   }
 
   /**
+   * SEUIL D'ALERTE d'un médicament : stock minimum au dépôt. En dessous,
+   * le médicament passe « sous le seuil » (alertes, accueil). 0 = pas d'alerte.
+   */
+  async modifierSeuil(medicamentId: number, seuilAlerte: number, utilisateurId: number) {
+    const avant = await this.prisma.medicament.findUnique({ where: { id: medicamentId }, select: { id: true, designation: true, seuilAlerte: true } });
+    if (!avant) throw new NotFoundException('Médicament introuvable.');
+    const apres = await this.prisma.medicament.update({
+      where: { id: medicamentId },
+      data: { seuilAlerte },
+      select: { id: true, designation: true, seuilAlerte: true },
+    });
+    await this.audit.enregistrer({ utilisateurId, action: 'MODIFICATION', entite: 'Medicament', entiteId: medicamentId, avant, apres });
+    return apres;
+  }
+
+  /**
    * APPLIQUE un mouvement au stock (dans une transaction) :
    * ligne de stock (médicament + lot) modifiée, stock négatif refusé,
    * mouvement enregistré avec le stock avant/après du médicament et du lot.

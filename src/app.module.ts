@@ -25,6 +25,7 @@ import { ParametrageModule } from './parametrage/parametrage.module';
 import { UtilisateursModule } from './utilisateurs/utilisateurs.module';
 import { AchatsModule } from './achats/achats.module';
 import { StockModule } from './stock/stock.module';
+import { LivraisonsModule } from './livraisons/livraisons.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
@@ -55,6 +56,9 @@ import { AccesGuard } from './auth/acces.guard';
 
     // 04 — Gestion du dépôt et des stocks : état, mouvements, ajustements, inventaires
     StockModule,
+
+    // 05 — Centres de santé : commandes, livraisons, stock théorique des centres
+    LivraisonsModule,
 
     // Tâches planifiées (ex. sortie automatique des lots périmés chaque nuit)
     ScheduleModule.forRoot(),
