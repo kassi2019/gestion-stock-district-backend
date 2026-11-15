@@ -695,6 +695,9 @@ model Facture {
   montantPaye    Decimal   @default(0) @db.Decimal(18, 2)
   statut         String    @default("EMISE") @db.NVarChar(30)
   motifAnnulation String?  @db.NVarChar(255)
+  rapportOrigineId Int?    // facture annulée : rapport d'origine (rapportId vidé pour pouvoir refacturer)
+  annulePar      Int?
+  dateAnnulation DateTime?
   utilisateurId  Int
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -738,6 +741,9 @@ model Paiement {
   reference        String?  @db.NVarChar(100)
   observations     String?  @db.NVarChar(255)
   annule           Boolean  @default(false)
+  motifAnnulation  String?  @db.NVarChar(255)
+  annulePar        Int?
+  dateAnnulation   DateTime?
   utilisateurId    Int
   createdAt        DateTime @default(now())
 

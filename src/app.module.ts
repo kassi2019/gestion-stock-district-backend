@@ -28,6 +28,7 @@ import { StockModule } from './stock/stock.module';
 import { LivraisonsModule } from './livraisons/livraisons.module';
 import { ConsommationsModule } from './consommations/consommations.module';
 import { AccueilModule } from './accueil/accueil.module';
+import { FacturationModule } from './facturation/facturation.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
@@ -63,6 +64,8 @@ import { AccesGuard } from './auth/acces.guard';
     LivraisonsModule,
     // 06 — Rapports mensuels de consommation (+ vérification sur place)
     ConsommationsModule,
+    // 07 — Facturation, paiements, avances, comptes des centres
+    FacturationModule,
     // Page d'accueil : chiffres clés et badges des tuiles
     AccueilModule,
 
