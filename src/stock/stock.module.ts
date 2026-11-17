@@ -12,9 +12,12 @@ import { StockService } from './stock.service';
 import { PerimesAutoService } from './perimes-auto.service';
 import { PiecesJointesService } from '../common/pieces-jointes.service';
 
+import { InventaireInitialController } from './inventaire-initial.controller';
+import { InventaireInitialService } from './inventaire-initial.service';
+
 @Module({
-  controllers: [StockController],
-  providers: [StockService, PiecesJointesService, PerimesAutoService],
+  controllers: [StockController, InventaireInitialController],
+  providers: [StockService, PiecesJointesService, PerimesAutoService, InventaireInitialService],
   exports: [StockService],
 })
 export class StockModule {}

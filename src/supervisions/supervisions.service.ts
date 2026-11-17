@@ -130,6 +130,35 @@ export class SupervisionsService {
   }
 
   /**
+   * Liste « Agents présents » : personnel ACTIF du DISTRICT (sans centre
+   * d'affectation) et, si un centre est choisi, celui du CENTRE (major...).
+   * Pour chaque personne : nom complet, fonction, lieu, et son compte
+   * utilisateur s'il en a un (enregistré avec l'agent).
+   * Route propre aux supervisions : pas besoin du droit « Utilisateurs ».
+   */
+  async agentsPossibles(centreId?: number) {
+    const personnes = await this.prisma.personnel.findMany({
+      where: { actif: true, OR: [{ centreId: null }, ...(centreId ? [{ centreId }] : [])] },
+      select: {
+        id: true,
+        nom: true,
+        prenoms: true,
+        centreId: true,
+        fonction: { select: { libelle: true } },
+        comptes: { select: { id: true }, take: 1 },
+      },
+      orderBy: [{ nom: 'asc' }, { prenoms: 'asc' }],
+    });
+    return personnes.map((p) => ({
+      id: p.id,
+      nom: [p.nom, p.prenoms].filter(Boolean).join(' '),
+      fonction: p.fonction?.libelle ?? '',
+      lieu: p.centreId ? 'Centre' : 'District',
+      utilisateurId: p.comptes[0]?.id ?? null,
+    }));
+  }
+
+  /**
    * Aide à la saisie : médicaments suivis au centre avec leur stock THÉORIQUE
    * à la date du contrôle, et les LOTS livrés au centre (choix facultatif).
    */

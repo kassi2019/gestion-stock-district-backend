@@ -20,6 +20,11 @@
  *
  * Les factures d'écart de supervision (type ECART_SUPERVISION) sont créées
  * par le module Supervisions (décision « facturation »).
+ *
+ * SPEC NOV. 2026 : les nouvelles factures sont des SORTIES de stock du district
+ * (type SORTIE, voir sorties.service.ts). Leur annulation remet le stock au
+ * district ; la génération « par rapport validé » ci-dessous ne sert plus
+ * qu'aux anciens rapports (ancien circuit).
  * =============================================================================
  */
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
@@ -29,6 +34,7 @@ import { AuditService } from '../audit/audit.service';
 import { STATUT_FACTURE as SF, STATUT_RAPPORT as SR, TYPE_COMPTEUR, TYPE_FACTURE } from '../common/constants';
 import { aujourdhui, texteVersDate } from '../common/dates';
 import { prochainNumero } from '../common/numerotation';
+import { SortiesService } from './sorties.service';
 
 /** Arrondi au centime. */
 export function arrondi(valeur: number) {
@@ -69,6 +75,7 @@ export class FacturesService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private sorties: SortiesService,
   ) {}
 
   // ===========================================================================
@@ -89,6 +96,7 @@ export class FacturesService {
         centre: { select: { id: true, code: true, nom: true } },
         rapport: { select: { id: true, numero: true, annee: true, mois: true } },
         supervision: { select: { id: true, numero: true, dateSupervision: true } },
+        _count: { select: { lignes: true } },
       },
       orderBy: [{ dateEmission: 'desc' }, { id: 'desc' }],
     });
@@ -108,7 +116,10 @@ export class FacturesService {
         supervision: { select: { id: true, numero: true, dateSupervision: true } },
         utilisateur: PERSONNE,
         lignes: {
-          include: { medicament: { select: { code: true, designation: true, uniteVente: { select: { libelle: true } } } } },
+          include: {
+            medicament: { select: { code: true, designation: true, uniteVente: { select: { libelle: true } } } },
+            lot: { select: { numeroLot: true, datePeremption: true } },
+          },
           orderBy: { medicament: { designation: 'asc' } },
         },
         imputations: {
@@ -149,7 +160,8 @@ export class FacturesService {
   /** Rapports de consommation VALIDÉS pas encore facturés. */
   aFacturer() {
     return this.prisma.rapportConsommation.findMany({
-      where: { statut: SR.VALIDE, facture: { is: null } },
+      // Ancien circuit seulement (les rapports centre génèrent leur facture eux-mêmes)
+      where: { statut: SR.VALIDE, facture: { is: null }, nouveauCircuit: false },
       include: {
         centre: { select: { id: true, code: true, nom: true } },
         _count: { select: { lignes: true } },
@@ -179,6 +191,7 @@ export class FacturesService {
       if (!r) throw new NotFoundException('Rapport introuvable.');
       if (r.facture) throw new BadRequestException(`Le rapport ${r.numero} est déjà facturé (${r.facture.numero}).`);
       if (r.statut !== SR.VALIDE) throw new BadRequestException(`Le rapport ${r.numero} n'est pas validé : il ne peut pas être facturé.`);
+      if (r.nouveauCircuit) throw new BadRequestException(`Le rapport ${r.numero} est un rapport centre : sa facture est générée à sa validation.`);
     }
 
     const creees: number[] = [];
@@ -227,6 +240,9 @@ export class FacturesService {
     }
     if (!motif?.trim()) throw new BadRequestException("Indiquez le motif de l'annulation.");
     await this.prisma.$transaction(async (tx) => {
+      // Facture-sortie : le stock revient au district (vérifications dans SortiesService)
+      if (avant.sortieStock) await this.sorties.annulerSortie(tx, avant, motif.trim(), utilisateurId);
+
       const apres = await tx.facture.update({
         where: { id },
         data: {
@@ -241,7 +257,8 @@ export class FacturesService {
           supervisionOrigineId: avant.supervisionId,
         },
       });
-      if (avant.rapportId) await tx.rapportConsommation.update({ where: { id: avant.rapportId }, data: { statut: SR.VALIDE } });
+      // Ancien circuit seulement : le rapport redevient « à facturer »
+      if (avant.rapportId && !avant.sortieStock) await tx.rapportConsommation.update({ where: { id: avant.rapportId }, data: { statut: SR.VALIDE } });
       // Facture d'écart de supervision : le stock reste régularisé, la décision change
       if (avant.supervisionId) {
         const sup = await tx.supervision.findUniqueOrThrow({ where: { id: avant.supervisionId } });
@@ -254,7 +271,7 @@ export class FacturesService {
         });
       }
       await this.audit.enregistrer({ utilisateurId, action: 'ANNULATION', entite: 'Facture', entiteId: id, avant, apres }, tx);
-    });
+    }, { timeout: 60000 });
     return this.trouver(id);
   }
 

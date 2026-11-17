@@ -10,8 +10,14 @@ import { FacturationController, PaiementsController } from './facturation.contro
 import { FacturesService } from './factures.service';
 import { PaiementsService } from './paiements.service';
 
+import { ParametrageModule } from '../parametrage/parametrage.module';
+import { StockModule } from '../stock/stock.module';
+import { SortiesService } from './sorties.service';
+
 @Module({
+  imports: [ParametrageModule, StockModule],
   controllers: [FacturationController, PaiementsController],
-  providers: [FacturesService, PaiementsService],
+  providers: [FacturesService, PaiementsService, SortiesService],
+  exports: [SortiesService],
 })
 export class FacturationModule {}

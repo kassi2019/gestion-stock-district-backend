@@ -7,9 +7,11 @@ import { StockModule } from '../stock/stock.module';
 import { EtatsController } from './etats.controller';
 import { EtatsService } from './etats.service';
 
+import { RapportDistrictService } from './rapport-district.service';
+
 @Module({
   imports: [StockModule],
   controllers: [EtatsController],
-  providers: [EtatsService],
+  providers: [EtatsService, RapportDistrictService],
 })
 export class EtatsModule {}

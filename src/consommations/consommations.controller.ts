@@ -11,7 +11,6 @@
  *   GET    /api/consommations/pieces/:id/fichier    télécharger une pièce jointe
  *
  * Droit « Modifier » sur le module Consommations :
- *   POST   /api/consommations/rapports              saisir un rapport (brouillon)
  *   PATCH  /api/consommations/rapports/:id          modifier (brouillon)
  *   DELETE /api/consommations/rapports/:id          supprimer (brouillon)
  *   POST   /api/consommations/rapports/:id/soumettre
@@ -42,7 +41,7 @@ import { UtilisateurCourant } from '../auth/current-user.decorator';
 import { UtilisateurConnecte } from '../auth/jwt.strategy';
 import { FichierRecu, PIECES_CONSOMMATIONS, PiecesJointesService, TAILLE_MAX_PIECE } from '../common/pieces-jointes.service';
 import { ConsommationsService } from './consommations.service';
-import { CreerRapportDto, ModifierRapportDto, RenvoyerRapportDto, VerifierRapportDto } from './consommations.dto';
+import { ModifierRapportDto, RenvoyerRapportDto, VerifierRapportDto } from './consommations.dto';
 
 function nombre(valeur?: string) {
   return valeur ? Number(valeur) : undefined;
@@ -87,11 +86,8 @@ export class ConsommationsController {
   // SAISIE ET CIRCUIT DE VALIDATION
   // ===========================================================================
 
-  @Acces('consommations', 'MODIFICATION')
-  @Post('rapports')
-  creer(@Body() dto: CreerRapportDto, @UtilisateurCourant() moi: UtilisateurConnecte) {
-    return this.consommations.creer(dto, moi.id);
-  }
+  // Plus de création d'anciens rapports : les nouveaux se font dans « Rapports centre »
+  // (spec nov. 2026). Les anciens rapports en cours peuvent encore être terminés.
 
   @Acces('consommations', 'MODIFICATION')
   @Patch('rapports/:id')

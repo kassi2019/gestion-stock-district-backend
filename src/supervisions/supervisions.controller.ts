@@ -52,6 +52,13 @@ export class SupervisionsController {
     return this.supervisions.ecarts({ centreId: nombre(centreId), du, au });
   }
 
+  /** Personnel proposé dans la liste « Agents présents » (district + centre choisi). */
+  @Acces('supervisions', 'LECTURE')
+  @Get('agents')
+  agentsPossibles(@Query('centreId') centreId?: string) {
+    return this.supervisions.agentsPossibles(nombre(centreId));
+  }
+
   @Acces('supervisions', 'LECTURE')
   @Get('preparation/:centreId')
   preparation(@Param('centreId', ParseIntPipe) centreId: number, @Query('date') date?: string) {

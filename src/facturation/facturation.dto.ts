@@ -39,6 +39,32 @@ export class GenererFacturesDto {
   dateEmission?: string;
 }
 
+/** Ligne d'une facture-sortie : produit et quantité livrée. */
+export class LigneSortieDto {
+  @IsInt({ message: 'Choisissez le produit' })
+  medicamentId!: number;
+
+  @Type(() => Number)
+  @IsInt({ message: 'La quantité doit être un nombre entier' })
+  @Min(1, { message: 'La quantité doit être au moins 1' })
+  quantite!: number;
+}
+
+/** Facture MANUELLE (complément en cours de mois : urgence, rupture). Le prix est repris des paramètres. */
+export class CreerFactureManuelleDto {
+  @IsInt({ message: 'Choisissez le centre de santé' })
+  centreId!: number;
+
+  @IsDateString({}, { message: 'Date de la facture invalide' })
+  dateEmission!: string;
+
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Ajoutez au moins un produit' })
+  @ValidateNested({ each: true })
+  @Type(() => LigneSortieDto)
+  lignes!: LigneSortieDto[];
+}
+
 export class AnnulerDto {
   @IsString({ message: "Indiquez le motif de l'annulation" })
   @MaxLength(255)

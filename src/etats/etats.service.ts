@@ -188,14 +188,14 @@ export class EtatsService {
       },
       include: {
         medicament: MEDICAMENT,
-        reception: { select: { numero: true, dateReception: true, fournisseur: { select: { id: true, raisonSociale: true } }, commande: { select: { numero: true } } } },
+        reception: { select: { numero: true, dateReception: true, numBonLivraison: true, fournisseur: { select: { id: true, raisonSociale: true } } } },
       },
       orderBy: [{ reception: { dateReception: 'desc' } }, { id: 'asc' }],
     });
     return lignes.map((l) => ({
       date: l.reception.dateReception,
       numero: l.reception.numero,
-      commande: l.reception.commande?.numero ?? '',
+      bonLivraison: l.reception.numBonLivraison ?? '',
       fournisseur: l.reception.fournisseur,
       medicament: l.medicament,
       lot: l.numeroLot ?? '',
@@ -206,31 +206,58 @@ export class EtatsService {
     }));
   }
 
+  /**
+   * LIVRAISONS AUX CENTRES : anciens bons de livraison validés (BL-...) +
+   * factures-sorties non annulées (FAC-..., spec nov. 2026), ligne par lot.
+   */
   async livraisons(f: FiltresEtat) {
-    const lignes = await this.prisma.ligneLivraison.findMany({
-      where: {
-        quantiteLivree: { gt: 0 },
-        ...(f.medicamentId ? { medicamentId: f.medicamentId } : {}),
-        livraison: { statut: SP.VALIDEE, ...(f.centreId ? { centreId: f.centreId } : {}), ...(plage(f) ? { dateLivraison: plage(f) } : {}) },
-      },
-      include: {
-        medicament: MEDICAMENT,
-        lot: { select: { numeroLot: true } },
-        livraison: { select: { numero: true, dateLivraison: true, centre: { select: { id: true, nom: true } }, commande: { select: { numero: true } } } },
-      },
-      orderBy: [{ livraison: { dateLivraison: 'desc' } }, { id: 'asc' }],
-    });
-    return lignes.map((l) => ({
-      date: l.livraison.dateLivraison,
-      numero: l.livraison.numero,
-      commande: l.livraison.commande?.numero ?? '',
-      centre: l.livraison.centre,
-      medicament: l.medicament,
-      lot: l.lot?.numeroLot ?? '',
-      quantite: l.quantiteLivree,
-      prixUnitaire: Number(l.prixUnitaire),
-      montant: Number(l.montant),
-    }));
+    const [anciens, factures] = await Promise.all([
+      this.prisma.ligneLivraison.findMany({
+        where: {
+          quantiteLivree: { gt: 0 },
+          ...(f.medicamentId ? { medicamentId: f.medicamentId } : {}),
+          livraison: { statut: SP.VALIDEE, ...(f.centreId ? { centreId: f.centreId } : {}), ...(plage(f) ? { dateLivraison: plage(f) } : {}) },
+        },
+        include: {
+          medicament: MEDICAMENT,
+          lot: { select: { numeroLot: true } },
+          livraison: { select: { numero: true, dateLivraison: true, centre: { select: { id: true, nom: true } } } },
+        },
+      }),
+      this.prisma.ligneFacture.findMany({
+        where: {
+          ...(f.medicamentId ? { medicamentId: f.medicamentId } : {}),
+          facture: { sortieStock: true, statut: { not: SF.ANNULEE }, ...(f.centreId ? { centreId: f.centreId } : {}), ...(plage(f) ? { dateEmission: plage(f) } : {}) },
+        },
+        include: {
+          medicament: MEDICAMENT,
+          lot: { select: { numeroLot: true } },
+          facture: { select: { numero: true, dateEmission: true, centre: { select: { id: true, nom: true } } } },
+        },
+      }),
+    ]);
+    return [
+      ...anciens.map((l) => ({
+        date: l.livraison.dateLivraison,
+        numero: l.livraison.numero,
+        centre: l.livraison.centre,
+        medicament: l.medicament,
+        lot: l.lot?.numeroLot ?? '',
+        quantite: l.quantiteLivree,
+        prixUnitaire: Number(l.prixUnitaire),
+        montant: Number(l.montant),
+      })),
+      ...factures.map((l) => ({
+        date: l.facture.dateEmission,
+        numero: l.facture.numero,
+        centre: l.facture.centre,
+        medicament: l.medicament,
+        lot: l.lot?.numeroLot ?? '',
+        quantite: l.quantite,
+        prixUnitaire: Number(l.prixUnitaire),
+        montant: Number(l.montant),
+      })),
+    ].sort((a, b) => b.date.getTime() - a.date.getTime());
   }
 
   async mouvements(f: FiltresEtat) {

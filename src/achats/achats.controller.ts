@@ -3,26 +3,22 @@
  * ROUTES DU MODULE 03 — APPROVISIONNEMENTS ET ACHATS
  * =============================================================================
  * Droit « Voir » sur le module Achats :
- *   GET   /api/achats/commandes                 liste (?fournisseurId=&statut=&du=&au=)
- *   GET   /api/achats/commandes/:id             une commande avec ses lignes
- *   GET   /api/achats/receptions                liste (?fournisseurId=&commandeId=&statut=&du=&au=)
+ *   GET   /api/achats/receptions                liste (?fournisseurId=&statut=&du=&au=)
  *   GET   /api/achats/receptions/:id            une réception avec ses lignes
+ *   GET   /api/achats/prix-achat                prix d'achat repris des paramètres
+ *                                               (?fournisseurId=&date=AAAA-MM-JJ&medicamentIds=1,2,3)
  *   GET   /api/achats/historique                historique des achats (?fournisseurId=&medicamentId=&du=&au=)
  *   GET   /api/achats/pieces/:type/:id          pièces jointes d'un document
  *   GET   /api/achats/pieces/:id/fichier        télécharger une pièce jointe
  *
  * Droit « Modifier » sur le module Achats :
- *   POST  /api/achats/commandes                 créer (brouillon)
- *   PATCH /api/achats/commandes/:id             modifier (brouillon)
- *   POST  /api/achats/commandes/:id/valider     valider
- *   POST  /api/achats/commandes/:id/annuler     annuler
  *   POST  /api/achats/receptions                créer (brouillon)
  *   PATCH /api/achats/receptions/:id            modifier (brouillon)
  *   POST  /api/achats/receptions/:id/valider    VALIDER = entrée en stock
  *   POST  /api/achats/receptions/:id/annuler    annuler (brouillon)
  *   POST  /api/achats/pieces/:type/:id          ajouter une pièce jointe (fichier « fichier »)
  *   DELETE /api/achats/pieces/:id               supprimer une pièce jointe
- *   (:type = CommandeFournisseur ou Reception)
+ *   (:type = Reception)
  * =============================================================================
  */
 import {
@@ -45,9 +41,8 @@ import { Acces } from '../auth/droits';
 import { UtilisateurCourant } from '../auth/current-user.decorator';
 import { UtilisateurConnecte } from '../auth/jwt.strategy';
 import { FichierRecu, PIECES_ACHATS, PiecesJointesService, TAILLE_MAX_PIECE } from '../common/pieces-jointes.service';
-import { CommandesService } from './commandes.service';
 import { ReceptionsService } from './receptions.service';
-import { CreerCommandeDto, CreerReceptionDto, ModifierCommandeDto, ModifierReceptionDto } from './achats.dto';
+import { CreerReceptionDto, ModifierReceptionDto } from './achats.dto';
 
 /** Nombre facultatif lu dans l'adresse (?fournisseurId=3) ; vide = undefined. */
 function nombre(valeur?: string) {
@@ -57,55 +52,9 @@ function nombre(valeur?: string) {
 @Controller('achats')
 export class AchatsController {
   constructor(
-    private commandes: CommandesService,
     private receptions: ReceptionsService,
     private pieces: PiecesJointesService,
   ) {}
-
-  // ===========================================================================
-  // COMMANDES FOURNISSEURS
-  // ===========================================================================
-
-  @Acces('achats', 'LECTURE')
-  @Get('commandes')
-  listerCommandes(
-    @Query('fournisseurId') fournisseurId?: string,
-    @Query('statut') statut?: string,
-    @Query('du') du?: string,
-    @Query('au') au?: string,
-  ) {
-    return this.commandes.lister({ fournisseurId: nombre(fournisseurId), statut, du, au });
-  }
-
-  @Acces('achats', 'LECTURE')
-  @Get('commandes/:id')
-  trouverCommande(@Param('id', ParseIntPipe) id: number) {
-    return this.commandes.trouver(id);
-  }
-
-  @Acces('achats', 'MODIFICATION')
-  @Post('commandes')
-  creerCommande(@Body() dto: CreerCommandeDto, @UtilisateurCourant() moi: UtilisateurConnecte) {
-    return this.commandes.creer(dto, moi.id);
-  }
-
-  @Acces('achats', 'MODIFICATION')
-  @Patch('commandes/:id')
-  modifierCommande(@Param('id', ParseIntPipe) id: number, @Body() dto: ModifierCommandeDto, @UtilisateurCourant() moi: UtilisateurConnecte) {
-    return this.commandes.modifier(id, dto, moi.id);
-  }
-
-  @Acces('achats', 'MODIFICATION')
-  @Post('commandes/:id/valider')
-  validerCommande(@Param('id', ParseIntPipe) id: number, @UtilisateurCourant() moi: UtilisateurConnecte) {
-    return this.commandes.valider(id, moi.id);
-  }
-
-  @Acces('achats', 'MODIFICATION')
-  @Post('commandes/:id/annuler')
-  annulerCommande(@Param('id', ParseIntPipe) id: number, @UtilisateurCourant() moi: UtilisateurConnecte) {
-    return this.commandes.annuler(id, moi.id);
-  }
 
   // ===========================================================================
   // RÉCEPTIONS
@@ -115,12 +64,23 @@ export class AchatsController {
   @Get('receptions')
   listerReceptions(
     @Query('fournisseurId') fournisseurId?: string,
-    @Query('commandeId') commandeId?: string,
     @Query('statut') statut?: string,
     @Query('du') du?: string,
     @Query('au') au?: string,
   ) {
-    return this.receptions.lister({ fournisseurId: nombre(fournisseurId), commandeId: nombre(commandeId), statut, du, au });
+    return this.receptions.lister({ fournisseurId: nombre(fournisseurId), statut, du, au });
+  }
+
+  /** Prix d'achat applicables (affichés, non modifiables, dans l'écran de saisie). */
+  @Acces('achats', 'LECTURE')
+  @Get('prix-achat')
+  prixAchat(
+    @Query('medicamentIds') medicamentIds?: string,
+    @Query('fournisseurId') fournisseurId?: string,
+    @Query('date') date?: string,
+  ) {
+    const ids = (medicamentIds || '').split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    return this.receptions.prixAchat(ids, nombre(fournisseurId), date);
   }
 
   @Acces('achats', 'LECTURE')

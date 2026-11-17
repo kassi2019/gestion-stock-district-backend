@@ -26,13 +26,13 @@ datasource db {
 
 /// Rôles : ADMIN, GESTIONNAIRE_DEPOT, AGENT_SAISIE, COMPTABLE, SUPERVISEUR, RESPONSABLE_DISTRICT
 model Role {
-  id          Int           @id @default(autoincrement())
-  code        String        @unique @db.NVarChar(50)
-  libelle     String        @db.NVarChar(100)
-  description String?       @db.NVarChar(255)
+  id           Int           @id @default(autoincrement())
+  code         String        @unique @db.NVarChar(50)
+  libelle      String        @db.NVarChar(100)
+  description  String?       @db.NVarChar(255)
   /// Droits par module, en JSON : {"parametrage":"MODIFICATION","stock":"LECTURE"}
   /// (module absent = aucun accès ; l'ADMIN a toujours tous les droits)
-  permissions String?       @db.NVarChar(Max)
+  permissions  String?       @db.NVarChar(Max)
   utilisateurs Utilisateur[]
 
   @@map("roles")
@@ -67,10 +67,10 @@ model Personnel {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  centre   CentreSante? @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  fonction Fonction?    @relation(fields: [fonctionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  centre   CentreSante?  @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  fonction Fonction?     @relation(fields: [fonctionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   /// Compte(s) utilisateur : au plus UN (règle vérifiée dans le service)
-  comptes Utilisateur[]
+  comptes  Utilisateur[]
 
   @@map("personnel")
 }
@@ -95,25 +95,27 @@ model Utilisateur {
   role      Role       @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   personnel Personnel? @relation(fields: [personnelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  journal               JournalAudit[]
-  mouvementsDepot       MouvementStock[]
-  mouvementsCentre      MouvementStockCentre[]
-  commandesFournisseur  CommandeFournisseur[]
-  receptions            Reception[]           @relation("ReceptionSaisie")
-  receptionsValidees    Reception[]           @relation("ReceptionValidation")
-  livraisons            Livraison[]           @relation("LivraisonSaisie")
-  livraisonsValidees    Livraison[]           @relation("LivraisonValidation")
-  rapportsSaisis        RapportConsommation[] @relation("RapportSaisie")
-  rapportsValides       RapportConsommation[] @relation("RapportValidation")
-  rapportsVerifies      RapportConsommation[] @relation("RapportVerification")
-  factures              Facture[]
-  paiements             Paiement[]
-  supervisionsCreees    Supervision[]         @relation("SupervisionSaisie")
-  supervisionsValidees  Supervision[]         @relation("SupervisionValidation")
-  supervisionAgents     SupervisionAgent[]
-  inventairesDepot      InventaireDepot[]     @relation("InventaireSaisie")
-  inventairesValides    InventaireDepot[]     @relation("InventaireValidation")
-  piecesJointes         PieceJointe[]
+  journal              JournalAudit[]
+  mouvementsDepot      MouvementStock[]
+  mouvementsCentre     MouvementStockCentre[]
+  receptions           Reception[]            @relation("ReceptionSaisie")
+  receptionsValidees   Reception[]            @relation("ReceptionValidation")
+  livraisons           Livraison[]            @relation("LivraisonSaisie")
+  livraisonsValidees   Livraison[]            @relation("LivraisonValidation")
+  rapportsSaisis       RapportConsommation[]  @relation("RapportSaisie")
+  rapportsValides      RapportConsommation[]  @relation("RapportValidation")
+  rapportsVerifies     RapportConsommation[]  @relation("RapportVerification")
+  rapportsRouverts     RapportConsommation[]  @relation("RapportReouverture")
+  transfertsCentre     TransfertCentre[]
+  inventairesInitiaux  InventaireInitial[]
+  factures             Facture[]
+  paiements            Paiement[]
+  supervisionsCreees   Supervision[]          @relation("SupervisionSaisie")
+  supervisionsValidees Supervision[]          @relation("SupervisionValidation")
+  supervisionAgents    SupervisionAgent[]
+  inventairesDepot     InventaireDepot[]      @relation("InventaireSaisie")
+  inventairesValides   InventaireDepot[]      @relation("InventaireValidation")
+  piecesJointes        PieceJointe[]
 
   @@map("utilisateurs")
 }
@@ -152,52 +154,53 @@ model TypeCentre {
 }
 
 model CentreSante {
-  id           Int      @id @default(autoincrement())
-  code         String   @unique @db.NVarChar(30)
-  nom          String   @db.NVarChar(150)
-  typeId       Int?     // type de centre (table types_centre)
-  localite     String?  @db.NVarChar(100)
-  adresse      String?  @db.NVarChar(255)
+  id          Int      @id @default(autoincrement())
+  code        String   @unique @db.NVarChar(30)
+  nom         String   @db.NVarChar(150)
+  typeId      Int? // type de centre (table types_centre)
+  localite    String?  @db.NVarChar(100)
+  adresse     String?  @db.NVarChar(255)
   /// Coordonnées GPS (degrés décimaux, ex. latitude 5.3600, longitude -4.0083 pour Abidjan)
-  latitude     Decimal? @db.Decimal(9, 6)
-  longitude    Decimal? @db.Decimal(9, 6)
-  responsable  String?  @db.NVarChar(150)
-  telephone    String?  @db.NVarChar(30)
-  email        String?  @db.NVarChar(150)
-  actif        Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  latitude    Decimal? @db.Decimal(9, 6)
+  longitude   Decimal? @db.Decimal(9, 6)
+  responsable String?  @db.NVarChar(150)
+  telephone   String?  @db.NVarChar(30)
+  email       String?  @db.NVarChar(150)
+  actif       Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   type TypeCentre? @relation(fields: [typeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  prixVente      PrixVente[]
-  stocks         StockCentre[]
-  mouvements     MouvementStockCentre[]
-  commandes      CommandeCentre[]
-  livraisons     Livraison[]
-  rapports       RapportConsommation[]
-  factures       Facture[]
-  paiements      Paiement[]
-  supervisions   Supervision[]
-  personnel      Personnel[]
+  prixVente         PrixVente[]
+  stocks            StockCentre[]
+  mouvements        MouvementStockCentre[]
+  livraisons        Livraison[]
+  rapports          RapportConsommation[]
+  factures          Facture[]
+  paiements         Paiement[]
+  supervisions      Supervision[]
+  personnel         Personnel[]
+  transfertsCedes   TransfertCentre[]      @relation("TransfertSource")
+  transfertsRecus   TransfertCentre[]      @relation("TransfertDestination")
+  inventaireInitial InventaireInitial[]
 
   @@map("centres_sante")
 }
 
 model Fournisseur {
-  id          Int      @id @default(autoincrement())
-  code        String   @unique @db.NVarChar(30)
-  raisonSociale String @db.NVarChar(150)
-  contact     String?  @db.NVarChar(150)
-  telephone   String?  @db.NVarChar(30)
-  email       String?  @db.NVarChar(150)
-  adresse     String?  @db.NVarChar(255)
-  actif       Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            Int      @id @default(autoincrement())
+  code          String   @unique @db.NVarChar(30)
+  raisonSociale String   @db.NVarChar(150)
+  contact       String?  @db.NVarChar(150)
+  telephone     String?  @db.NVarChar(30)
+  email         String?  @db.NVarChar(150)
+  adresse       String?  @db.NVarChar(255)
+  actif         Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   prixAchat  PrixAchat[]
-  commandes  CommandeFournisseur[]
   receptions Reception[]
 
   @@map("fournisseurs")
@@ -235,43 +238,43 @@ model UniteVente {
 }
 
 model Medicament {
-  id                Int      @id @default(autoincrement())
-  code              String   @unique @db.NVarChar(30)
-  designation       String   @db.NVarChar(200)
-  formeId           Int?     // forme (table formes_medicament : comprimé, sirop...)
-  dosage            String?  @db.NVarChar(50)
-  unite             String   @db.NVarChar(30)  // unité de dispensation
-  conditionnement   String?  @db.NVarChar(100)
-  familleId         Int?
-  seuilAlerte       Int      @default(0)        // stock minimum dépôt
-  suiviLot          Boolean  @default(true)     // lot + péremption obligatoires
+  id              Int      @id @default(autoincrement())
+  code            String   @unique @db.NVarChar(30)
+  designation     String   @db.NVarChar(200)
+  formeId         Int? // forme (table formes_medicament : comprimé, sirop...)
+  dosage          String?  @db.NVarChar(50)
+  unite           String   @db.NVarChar(30) // unité de dispensation
+  conditionnement String?  @db.NVarChar(100)
+  familleId       Int?
+  seuilAlerte     Int      @default(0) // stock minimum dépôt
+  suiviLot        Boolean  @default(true) // lot + péremption obligatoires
   /// Consommable (coton, alcool...) : pas facturé en caisse pharmacie (montant = 0)
-  consommable       Boolean  @default(false)
+  consommable     Boolean  @default(false)
   /// Unité de vente (table unites_vente : Boîte, Plaque, Flacon...) — le prix de vente s'applique à cette unité
-  uniteVenteId      Int?
-  actif             Boolean  @default(true)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  uniteVenteId    Int?
+  actif           Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  famille FamilleProduit? @relation(fields: [familleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  forme   FormeMedicament? @relation(fields: [formeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  uniteVente UniteVente? @relation(fields: [uniteVenteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  famille    FamilleProduit?  @relation(fields: [familleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  forme      FormeMedicament? @relation(fields: [formeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  uniteVente UniteVente?      @relation(fields: [uniteVenteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  prixAchat           PrixAchat[]
-  prixVente           PrixVente[]
-  lots                Lot[]
-  stocksDepot         StockDepot[]
-  mouvements          MouvementStock[]
-  stocksCentre        StockCentre[]
-  mouvementsCentre    MouvementStockCentre[]
-  lignesCmdFourn      LigneCommandeFournisseur[]
-  lignesReception     LigneReception[]
-  lignesCmdCentre     LigneCommandeCentre[]
-  lignesLivraison     LigneLivraison[]
-  lignesConsommation  LigneConsommation[]
-  lignesFacture       LigneFacture[]
-  lignesSupervision   LigneSupervision[]
-  lignesInventaire    LigneInventaireDepot[]
+  prixAchat          PrixAchat[]
+  prixVente          PrixVente[]
+  lots               Lot[]
+  stocksDepot        StockDepot[]
+  mouvements         MouvementStock[]
+  stocksCentre       StockCentre[]
+  mouvementsCentre   MouvementStockCentre[]
+  lignesReception    LigneReception[]
+  lignesLivraison    LigneLivraison[]
+  lignesConsommation LigneConsommation[]
+  lignesFacture      LigneFacture[]
+  lignesSupervision  LigneSupervision[]
+  lignesInventaire   LigneInventaireDepot[]
+  transfertsCentre   TransfertCentre[]
+  inventaireInitial  InventaireInitial[]
 
   @@map("medicaments")
 }
@@ -317,61 +320,23 @@ model PrixVente {
 // 3.2 ACHATS / APPROVISIONNEMENTS
 // -----------------------------------------------------------------------------
 
-/// statut : BROUILLON, VALIDEE, PARTIELLEMENT_RECUE, RECUE, ANNULEE
-model CommandeFournisseur {
-  id             Int       @id @default(autoincrement())
-  numero         String    @unique @db.NVarChar(30)
-  fournisseurId  Int
-  dateCommande   DateTime  @db.Date
-  statut         String    @default("BROUILLON") @db.NVarChar(30)
-  montantTotal   Decimal   @default(0) @db.Decimal(18, 2)
-  observations   String?   @db.NVarChar(Max)
-  utilisateurId  Int
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  fournisseur Fournisseur @relation(fields: [fournisseurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  utilisateur Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  lignes      LigneCommandeFournisseur[]
-  receptions  Reception[]
-
-  @@map("commandes_fournisseur")
-}
-
-model LigneCommandeFournisseur {
-  id              Int     @id @default(autoincrement())
-  commandeId      Int
-  medicamentId    Int
-  quantite        Int
-  quantiteRecue   Int     @default(0)
-  prixUnitaire    Decimal @db.Decimal(18, 2)
-  montant         Decimal @db.Decimal(18, 2)
-
-  commande   CommandeFournisseur @relation(fields: [commandeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  medicament Medicament          @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@map("lignes_commande_fournisseur")
-}
-
 /// statut : BROUILLON, VALIDEE, ANNULEE  — le stock n'est mis à jour qu'à la validation
 model Reception {
-  id                Int       @id @default(autoincrement())
-  numero            String    @unique @db.NVarChar(30) // n° bon de réception
-  commandeId        Int?
-  fournisseurId     Int
-  dateReception     DateTime  @db.Date
-  numFactureFourn   String?   @db.NVarChar(50)
-  numBonLivraison   String?   @db.NVarChar(50)
-  statut            String    @default("BROUILLON") @db.NVarChar(30)
-  montantTotal      Decimal   @default(0) @db.Decimal(18, 2)
-  observations      String?   @db.NVarChar(Max)
-  utilisateurId     Int
-  validePar         Int?
-  dateValidation    DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id              Int       @id @default(autoincrement())
+  numero          String    @unique @db.NVarChar(30) // n° bon de réception
+  fournisseurId   Int
+  dateReception   DateTime  @db.Date
+  numFactureFourn String?   @db.NVarChar(50)
+  numBonLivraison String?   @db.NVarChar(50)
+  statut          String    @default("BROUILLON") @db.NVarChar(30)
+  montantTotal    Decimal   @default(0) @db.Decimal(18, 2)
+  observations    String?   @db.NVarChar(Max)
+  utilisateurId   Int
+  validePar       Int?
+  dateValidation  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  commande    CommandeFournisseur? @relation(fields: [commandeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   fournisseur Fournisseur          @relation(fields: [fournisseurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   utilisateur Utilisateur          @relation("ReceptionSaisie", fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   validateur  Utilisateur?         @relation("ReceptionValidation", fields: [validePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -416,6 +381,7 @@ model Lot {
   lignesLivraison   LigneLivraison[]
   lignesSupervision LigneSupervision[]
   lignesInventaire  LigneInventaireDepot[]
+  lignesFacture     LigneFacture[]
 
   @@unique([medicamentId, numeroLot])
   @@map("lots")
@@ -441,23 +407,23 @@ model StockDepot {
 ///        PERIME, REGULARISATION
 /// sourceType/sourceId : pièce à l'origine du mouvement (RECEPTION, LIVRAISON, INVENTAIRE, ...)
 model MouvementStock {
-  id             Int      @id @default(autoincrement())
-  dateMouvement  DateTime @default(now())
-  type           String   @db.NVarChar(30)
-  medicamentId   Int
-  lotId          Int?
-  quantite       Int      // toujours positive ; le sens est donné par le type
-  stockAvant     Int
-  stockApres     Int
+  id            Int      @id @default(autoincrement())
+  dateMouvement DateTime @default(now())
+  type          String   @db.NVarChar(30)
+  medicamentId  Int
+  lotId         Int?
+  quantite      Int // toujours positive ; le sens est donné par le type
+  stockAvant    Int
+  stockApres    Int
   /// Stock du LOT (ou de la ligne sans lot) avant / après le mouvement (fiche d'inventaire)
-  stockLotAvant  Int?
-  stockLotApres  Int?
-  prixUnitaire   Decimal? @db.Decimal(18, 2)
-  motif          String?  @db.NVarChar(255)
-  pieceRef       String?  @db.NVarChar(50)
-  sourceType     String?  @db.NVarChar(30)
-  sourceId       Int?
-  utilisateurId  Int
+  stockLotAvant Int?
+  stockLotApres Int?
+  prixUnitaire  Decimal? @db.Decimal(18, 2)
+  motif         String?  @db.NVarChar(255)
+  pieceRef      String?  @db.NVarChar(50)
+  sourceType    String?  @db.NVarChar(30)
+  sourceId      Int?
+  utilisateurId Int
 
   medicament  Medicament  @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   lot         Lot?        @relation(fields: [lotId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -470,34 +436,34 @@ model MouvementStock {
 
 /// statut : EN_COURS, VALIDE, ANNULE
 model InventaireDepot {
-  id              Int       @id @default(autoincrement())
-  numero          String    @unique @db.NVarChar(30)
-  dateInventaire  DateTime  @db.Date
-  statut          String    @default("EN_COURS") @db.NVarChar(30)
-  observations    String?   @db.NVarChar(Max)
-  utilisateurId   Int
-  validePar       Int?
-  dateValidation  DateTime?
-  createdAt       DateTime  @default(now())
+  id             Int       @id @default(autoincrement())
+  numero         String    @unique @db.NVarChar(30)
+  dateInventaire DateTime  @db.Date
+  statut         String    @default("EN_COURS") @db.NVarChar(30)
+  observations   String?   @db.NVarChar(Max)
+  utilisateurId  Int
+  validePar      Int?
+  dateValidation DateTime?
+  createdAt      DateTime  @default(now())
 
-  utilisateur Utilisateur  @relation("InventaireSaisie", fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  validateur  Utilisateur? @relation("InventaireValidation", fields: [validePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur Utilisateur            @relation("InventaireSaisie", fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  validateur  Utilisateur?           @relation("InventaireValidation", fields: [validePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
   lignes      LigneInventaireDepot[]
 
   @@map("inventaires_depot")
 }
 
 model LigneInventaireDepot {
-  id               Int     @id @default(autoincrement())
-  inventaireId     Int
-  medicamentId     Int
-  lotId            Int?
-  stockTheorique   Int
-  stockPhysique    Int
-  ecart            Int
-  prixUnitaire     Decimal? @db.Decimal(18, 2)
-  valeurEcart      Decimal? @db.Decimal(18, 2)
-  commentaire      String?  @db.NVarChar(255)
+  id             Int      @id @default(autoincrement())
+  inventaireId   Int
+  medicamentId   Int
+  lotId          Int?
+  stockTheorique Int
+  stockPhysique  Int
+  ecart          Int
+  prixUnitaire   Decimal? @db.Decimal(18, 2)
+  valeurEcart    Decimal? @db.Decimal(18, 2)
+  commentaire    String?  @db.NVarChar(255)
 
   inventaire InventaireDepot @relation(fields: [inventaireId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   medicament Medicament      @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -510,71 +476,38 @@ model LigneInventaireDepot {
 // 3.4 CENTRES : COMMANDES, LIVRAISONS, STOCK THÉORIQUE
 // -----------------------------------------------------------------------------
 
-/// statut : BROUILLON, SOUMISE, VALIDEE, PREPAREE, LIVREE, ANNULEE
-model CommandeCentre {
-  id            Int      @id @default(autoincrement())
-  numero        String   @unique @db.NVarChar(30)
-  centreId      Int
-  dateCommande  DateTime @db.Date
-  statut        String   @default("BROUILLON") @db.NVarChar(30)
-  observations  String?  @db.NVarChar(Max)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  centre     CentreSante @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  lignes     LigneCommandeCentre[]
-  livraisons Livraison[]
-
-  @@map("commandes_centre")
-}
-
-model LigneCommandeCentre {
-  id                 Int @id @default(autoincrement())
-  commandeId         Int
-  medicamentId       Int
-  quantiteDemandee   Int
-  quantiteAccordee   Int?
-
-  commande   CommandeCentre @relation(fields: [commandeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  medicament Medicament     @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@map("lignes_commande_centre")
-}
-
 /// statut : BROUILLON, PREPAREE, VALIDEE (livrée : stock dépôt -, stock centre +), ANNULEE
 model Livraison {
-  id              Int       @id @default(autoincrement())
-  numero          String    @unique @db.NVarChar(30) // n° bon de livraison
-  centreId        Int
-  commandeId      Int?
-  dateLivraison   DateTime  @db.Date
-  statut          String    @default("BROUILLON") @db.NVarChar(30)
-  montantTotal    Decimal   @default(0) @db.Decimal(18, 2)
-  observations    String?   @db.NVarChar(Max)
-  utilisateurId   Int
-  validePar       Int?
-  dateValidation  DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id             Int       @id @default(autoincrement())
+  numero         String    @unique @db.NVarChar(30) // n° bon de livraison
+  centreId       Int
+  dateLivraison  DateTime  @db.Date
+  statut         String    @default("BROUILLON") @db.NVarChar(30)
+  montantTotal   Decimal   @default(0) @db.Decimal(18, 2)
+  observations   String?   @db.NVarChar(Max)
+  utilisateurId  Int
+  validePar      Int?
+  dateValidation DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  centre      CentreSante     @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  commande    CommandeCentre? @relation(fields: [commandeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  utilisateur Utilisateur     @relation("LivraisonSaisie", fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  validateur  Utilisateur?    @relation("LivraisonValidation", fields: [validePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  centre      CentreSante      @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur Utilisateur      @relation("LivraisonSaisie", fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  validateur  Utilisateur?     @relation("LivraisonValidation", fields: [validePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
   lignes      LigneLivraison[]
 
   @@map("livraisons")
 }
 
 model LigneLivraison {
-  id                Int     @id @default(autoincrement())
-  livraisonId       Int
-  medicamentId      Int
-  lotId             Int?
-  quantitePreparee  Int
-  quantiteLivree    Int
-  prixUnitaire      Decimal @db.Decimal(18, 2) // prix de vente figé à la livraison
-  montant           Decimal @db.Decimal(18, 2)
+  id               Int     @id @default(autoincrement())
+  livraisonId      Int
+  medicamentId     Int
+  lotId            Int?
+  quantitePreparee Int
+  quantiteLivree   Int
+  prixUnitaire     Decimal @db.Decimal(18, 2) // prix de vente figé à la livraison
+  montant          Decimal @db.Decimal(18, 2)
 
   livraison  Livraison  @relation(fields: [livraisonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   medicament Medicament @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -600,18 +533,18 @@ model StockCentre {
 
 /// type : LIVRAISON, CONSOMMATION, ECART_SUPERVISION, REGULARISATION
 model MouvementStockCentre {
-  id             Int      @id @default(autoincrement())
-  dateMouvement  DateTime @default(now())
-  type           String   @db.NVarChar(30)
-  centreId       Int
-  medicamentId   Int
-  quantite       Int      // signée : + entrée, - sortie
-  stockAvant     Int
-  stockApres     Int
-  motif          String?  @db.NVarChar(255)
-  sourceType     String?  @db.NVarChar(30)
-  sourceId       Int?
-  utilisateurId  Int
+  id            Int      @id @default(autoincrement())
+  dateMouvement DateTime @default(now())
+  type          String   @db.NVarChar(30)
+  centreId      Int
+  medicamentId  Int
+  quantite      Int // signée : + entrée, - sortie
+  stockAvant    Int
+  stockApres    Int
+  motif         String?  @db.NVarChar(255)
+  sourceType    String?  @db.NVarChar(30)
+  sourceId      Int?
+  utilisateurId Int
 
   centre      CentreSante @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   medicament  Medicament  @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -627,33 +560,42 @@ model MouvementStockCentre {
 
 /// statut : BROUILLON, SOUMIS, VALIDE, FACTURE
 model RapportConsommation {
-  id              Int       @id @default(autoincrement())
-  numero          String    @unique @db.NVarChar(30)
-  centreId        Int
-  annee           Int
-  mois            Int
-  statut          String    @default("BROUILLON") @db.NVarChar(30)
-  montantTotal    Decimal   @default(0) @db.Decimal(18, 2)
-  observations    String?   @db.NVarChar(Max)
-  utilisateurId   Int
-  dateSoumission  DateTime?
-  validePar       Int?
-  dateValidation  DateTime?
+  id                       Int       @id @default(autoincrement())
+  numero                   String    @unique @db.NVarChar(30)
+  centreId                 Int
+  annee                    Int
+  mois                     Int
+  statut                   String    @default("BROUILLON") @db.NVarChar(30)
+  montantTotal             Decimal   @default(0) @db.Decimal(18, 2)
+  observations             String?   @db.NVarChar(Max)
+  utilisateurId            Int
+  dateSoumission           DateTime?
+  validePar                Int?
+  dateValidation           DateTime?
   // Vérification sur place par l'agent du district (facultative)
   dateVerification         DateTime? @db.Date
   verifiePar               Int?
   agentsVerification       String?   @db.NVarChar(500)
   observationsVerification String?   @db.NVarChar(Max)
   motifRenvoi              String?   @db.NVarChar(500) // renvoi en brouillon pour correction
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  // Réouverture d'un rapport validé : réservée à l'administrateur, avec motif
+  // (on garde la DERNIÈRE réouverture ici ; l'historique complet est dans le journal d'audit)
+  reouvertPar              Int?
+  dateReouverture          DateTime?
+  motifReouverture         String?   @db.NVarChar(500)
+  /// true = rapport du NOUVEAU circuit (spec nov. 2026 : SI, R, SDU, CMM, QaC, facture-sortie).
+  /// false = ancien rapport de consommation (déclaration du centre, facture de consommation).
+  nouveauCircuit           Boolean   @default(false)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 
-  centre      CentreSante  @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  verificateur Utilisateur? @relation("RapportVerification", fields: [verifiePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  utilisateur Utilisateur  @relation("RapportSaisie", fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  validateur  Utilisateur? @relation("RapportValidation", fields: [validePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  lignes      LigneConsommation[]
-  facture     Facture?
+  centre       CentreSante         @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  verificateur Utilisateur?        @relation("RapportVerification", fields: [verifiePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reouvreur    Utilisateur?        @relation("RapportReouverture", fields: [reouvertPar], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur  Utilisateur         @relation("RapportSaisie", fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  validateur   Utilisateur?        @relation("RapportValidation", fields: [validePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lignes       LigneConsommation[]
+  facture      Facture?
 
   @@unique([centreId, annee, mois])
   @@map("rapports_consommation")
@@ -663,11 +605,26 @@ model LigneConsommation {
   id               Int     @id @default(autoincrement())
   rapportId        Int
   medicamentId     Int
-  quantite         Int     // quantité DÉCLARÉE par le centre
-  quantiteVerifiee Int?    // quantité constatée sur place (si vérification) : c'est elle qui est retenue
+  quantite         Int // C : quantité CONSOMMÉE (saisie par le district)
+  quantiteVerifiee Int? // ancien circuit : quantité constatée sur place (si vérification)
   commentaire      String? @db.NVarChar(255)
   prixUnitaire     Decimal @db.Decimal(18, 2) // prix de vente applicable figé
   montant          Decimal @db.Decimal(18, 2)
+
+  // ---- Rapport centre de santé (spec nov. 2026) ----
+  // Saisis : C (quantite), stock restant compté, jours de rupture et quantité
+  // accordée ; tout le reste est CALCULÉ par l'application.
+  stockInitial     Int      @default(0) // SI  : SDU du rapport validé du mois précédent (ou inventaire initial)
+  recu             Int      @default(0) // R   : somme des factures (sorties) du mois pour ce centre
+  pertes           Int      @default(0) // P   : perte / ajustement = SI + R + T - C - restant (négatif = surplus constaté)
+  stockRestant     Int? // quantité restante COMPTÉE au centre (null = pas encore saisie : stock théorique retenu)
+  joursRupture     Int      @default(0) // nombre de jours de rupture dans le mois (corrige la CMM)
+  transferts       Int      @default(0) // T   : + reçu d'un autre centre, - cédé (calculé depuis transferts_centre)
+  stockDisponible  Int      @default(0) // SDU = stock restant (= SI + R - C - P + T)
+  cmm              Decimal  @default(0) @db.Decimal(18, 2) // consommation mensuelle moyenne
+  quantiteProposee Int      @default(0) // QaC = max(0, N x CMM - SDU)
+  quantiteValidee  Int? // quantité à livrer retenue par le district (par défaut = QaC)
+  prixAchat        Decimal? @db.Decimal(18, 2) // prix d'achat figé à la validation (rapport district)
 
   rapport    RapportConsommation @relation(fields: [rapportId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   medicament Medicament          @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -683,70 +640,130 @@ model LigneConsommation {
 /// type   : CONSOMMATION, ECART_SUPERVISION, AVOIR
 /// statut : EMISE, PARTIELLEMENT_PAYEE, PAYEE, ANNULEE
 model Facture {
-  id             Int       @id @default(autoincrement())
-  numero         String    @unique @db.NVarChar(30)
-  type           String    @default("CONSOMMATION") @db.NVarChar(30)
-  centreId       Int
-  rapportId      Int?      @unique
-  supervisionId  Int?      @unique
-  dateEmission   DateTime  @db.Date
-  dateEcheance   DateTime? @db.Date
-  montantTotal   Decimal   @db.Decimal(18, 2)
-  montantPaye    Decimal   @default(0) @db.Decimal(18, 2)
-  statut         String    @default("EMISE") @db.NVarChar(30)
-  motifAnnulation String?  @db.NVarChar(255)
-  rapportOrigineId Int?    // facture annulée : rapport d'origine (rapportId vidé pour pouvoir refacturer)
+  id                   Int       @id @default(autoincrement())
+  numero               String    @unique @db.NVarChar(30)
+  type                 String    @default("CONSOMMATION") @db.NVarChar(30)
+  centreId             Int
+  rapportId            Int?      @unique
+  supervisionId        Int?      @unique
+  dateEmission         DateTime  @db.Date
+  dateEcheance         DateTime? @db.Date
+  montantTotal         Decimal   @db.Decimal(18, 2)
+  montantPaye          Decimal   @default(0) @db.Decimal(18, 2)
+  statut               String    @default("EMISE") @db.NVarChar(30)
+  motifAnnulation      String?   @db.NVarChar(255)
+  rapportOrigineId     Int? // facture annulée : rapport d'origine (rapportId vidé pour pouvoir refacturer)
   supervisionOrigineId Int? // idem pour une facture d'écart de supervision
-  annulePar      Int?
-  dateAnnulation DateTime?
-  utilisateurId  Int
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  /// Spec nov. 2026 : origine de la sortie — RAPPORT (générée par le rapport centre) ou MANUELLE (complément en cours de mois)
+  origine              String?   @db.NVarChar(30)
+  /// true = la facture SORT le stock du district (nouveau circuit). false = ancienne facture de consommation (sans mouvement de stock)
+  sortieStock          Boolean   @default(false)
+  /// Avoir : facture corrigée par cet avoir
+  factureOrigineId     Int?
+  annulePar            Int?
+  dateAnnulation       DateTime?
+  utilisateurId        Int
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  centre      CentreSante          @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  rapport     RapportConsommation? @relation(fields: [rapportId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  supervision Supervision?         @relation(fields: [supervisionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  utilisateur Utilisateur          @relation(fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  lignes      LigneFacture[]
-  imputations Imputation[]
+  centre         CentreSante          @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  rapport        RapportConsommation? @relation(fields: [rapportId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  supervision    Supervision?         @relation(fields: [supervisionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur    Utilisateur          @relation(fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  factureOrigine Facture?             @relation("AvoirFacture", fields: [factureOrigineId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  avoirs         Facture[]            @relation("AvoirFacture")
+  lignes         LigneFacture[]
+  imputations    Imputation[]
 
   @@index([centreId, dateEmission])
   @@map("factures")
 }
 
 model LigneFacture {
-  id            Int     @id @default(autoincrement())
-  factureId     Int
-  medicamentId  Int
-  quantite      Int
-  prixUnitaire  Decimal @db.Decimal(18, 2)
-  montant       Decimal @db.Decimal(18, 2)
+  id           Int      @id @default(autoincrement())
+  factureId    Int
+  medicamentId Int
+  quantite     Int
+  prixUnitaire Decimal  @db.Decimal(18, 2)
+  montant      Decimal  @db.Decimal(18, 2)
+  /// Lot sorti du stock district (une ligne par produit ET par lot ; NULL = stock sans lot)
+  lotId        Int?
+  /// Prix d'achat figé à la validation (marge et dette fournisseurs du rapport district)
+  prixAchat    Decimal? @db.Decimal(18, 2)
 
   facture    Facture    @relation(fields: [factureId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   medicament Medicament @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lot        Lot?       @relation(fields: [lotId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@map("lignes_facture")
+}
+
+/// Transfert de produits d'un centre de santé à un autre, pour un mois donné.
+/// Saisi une seule fois : il compte en NÉGATIF dans le rapport du centre qui cède
+/// et en POSITIF dans celui du centre qui reçoit (colonne T des rapports).
+model TransfertCentre {
+  id                  Int      @id @default(autoincrement())
+  annee               Int
+  mois                Int
+  centreSourceId      Int // centre qui cède
+  centreDestinationId Int // centre qui reçoit
+  medicamentId        Int
+  quantite            Int // toujours positive
+  motif               String?  @db.NVarChar(255)
+  utilisateurId       Int
+  createdAt           DateTime @default(now())
+
+  centreSource      CentreSante @relation("TransfertSource", fields: [centreSourceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  centreDestination CentreSante @relation("TransfertDestination", fields: [centreDestinationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  medicament        Medicament  @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur       Utilisateur @relation(fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([annee, mois])
+  @@map("transferts_centre")
+}
+
+/// Inventaire initial : stock de départ à la mise en service, saisi UNE SEULE FOIS.
+/// centreId NULL = stock du district ; sinon stock du centre de santé.
+/// Verrouillé dès qu'un premier rapport centre est validé.
+model InventaireInitial {
+  id             Int       @id @default(autoincrement())
+  centreId       Int?
+  medicamentId   Int
+  numeroLot      String?   @db.NVarChar(50) // district seulement (stock suivi par lot)
+  datePeremption DateTime? @db.Date
+  quantite       Int
+  dateInventaire DateTime  @db.Date
+  utilisateurId  Int
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  centre      CentreSante? @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  medicament  Medicament   @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur Utilisateur  @relation(fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([centreId, medicamentId])
+  @@map("inventaire_initial")
 }
 
 /// type : PAIEMENT, AVANCE ; mode : ESPECES, CHEQUE, VIREMENT, MOBILE_MONEY
 /// montantNonImpute = avance disponible restant à imputer
 model Paiement {
-  id               Int      @id @default(autoincrement())
-  numero           String   @unique @db.NVarChar(30) // n° reçu
+  id               Int       @id @default(autoincrement())
+  numero           String    @unique @db.NVarChar(30) // n° reçu
   centreId         Int
-  datePaiement     DateTime @db.Date
-  montant          Decimal  @db.Decimal(18, 2)
-  montantNonImpute Decimal  @default(0) @db.Decimal(18, 2)
-  type             String   @default("PAIEMENT") @db.NVarChar(20)
-  mode             String   @db.NVarChar(20)
-  reference        String?  @db.NVarChar(100)
-  observations     String?  @db.NVarChar(255)
-  annule           Boolean  @default(false)
-  motifAnnulation  String?  @db.NVarChar(255)
+  datePaiement     DateTime  @db.Date
+  montant          Decimal   @db.Decimal(18, 2)
+  montantNonImpute Decimal   @default(0) @db.Decimal(18, 2)
+  type             String    @default("PAIEMENT") @db.NVarChar(20)
+  mode             String    @db.NVarChar(20)
+  reference        String?   @db.NVarChar(100)
+  observations     String?   @db.NVarChar(255)
+  annule           Boolean   @default(false)
+  motifAnnulation  String?   @db.NVarChar(255)
   annulePar        Int?
   dateAnnulation   DateTime?
   utilisateurId    Int
-  createdAt        DateTime @default(now())
+  createdAt        DateTime  @default(now())
 
   centre      CentreSante  @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   utilisateur Utilisateur  @relation(fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -796,9 +813,9 @@ model Supervision {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  centre      CentreSante  @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  utilisateur Utilisateur  @relation("SupervisionSaisie", fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  validateur  Utilisateur? @relation("SupervisionValidation", fields: [validePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  centre      CentreSante        @relation(fields: [centreId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  utilisateur Utilisateur        @relation("SupervisionSaisie", fields: [utilisateurId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  validateur  Utilisateur?       @relation("SupervisionValidation", fields: [validePar], references: [id], onDelete: NoAction, onUpdate: NoAction)
   agents      SupervisionAgent[]
   lignes      LigneSupervision[]
   facture     Facture?
@@ -821,16 +838,16 @@ model SupervisionAgent {
 }
 
 model LigneSupervision {
-  id              Int      @id @default(autoincrement())
-  supervisionId   Int
-  medicamentId    Int
-  lotId           Int?
-  stockTheorique  Int
-  stockPhysique   Int
-  ecart           Int      // physique - théorique
-  prixUnitaire    Decimal? @db.Decimal(18, 2)
-  valeurEcart     Decimal? @db.Decimal(18, 2)
-  commentaire     String?  @db.NVarChar(255)
+  id             Int      @id @default(autoincrement())
+  supervisionId  Int
+  medicamentId   Int
+  lotId          Int?
+  stockTheorique Int
+  stockPhysique  Int
+  ecart          Int // physique - théorique
+  prixUnitaire   Decimal? @db.Decimal(18, 2)
+  valeurEcart    Decimal? @db.Decimal(18, 2)
+  commentaire    String?  @db.NVarChar(255)
 
   supervision Supervision @relation(fields: [supervisionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   medicament  Medicament  @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -866,7 +883,7 @@ model JournalAudit {
   id            Int      @id @default(autoincrement())
   dateAction    DateTime @default(now())
   utilisateurId Int?
-  action        String   @db.NVarChar(50)  // CREATION, MODIFICATION, VALIDATION, ANNULATION, CONNEXION...
+  action        String   @db.NVarChar(50) // CREATION, MODIFICATION, VALIDATION, ANNULATION, CONNEXION...
   entite        String   @db.NVarChar(50)
   entiteId      String?  @db.NVarChar(50)
   valeursAvant  String?  @db.NVarChar(Max) // JSON

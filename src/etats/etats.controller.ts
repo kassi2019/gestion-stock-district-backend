@@ -7,6 +7,7 @@
  *   GET /api/etats/tableau-de-bord
  *   GET /api/etats/stock
  *   GET /api/etats/receptions        GET /api/etats/livraisons     GET /api/etats/mouvements
+ *   GET /api/etats/rapport-district   rapport district (quantités, valorisation, dû fournisseurs)
  *   GET /api/etats/consommations
  *   GET /api/etats/factures          GET /api/etats/encaissements  GET /api/etats/creances
  *   GET /api/etats/produits          GET /api/etats/ecarts
@@ -15,6 +16,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { Acces } from '../auth/droits';
 import { EtatsService, FiltresEtat } from './etats.service';
+import { RapportDistrictService } from './rapport-district.service';
 
 function filtres(q: Record<string, string | undefined>): FiltresEtat {
   const nombre = (v?: string) => (v ? Number(v) : undefined);
@@ -23,7 +25,17 @@ function filtres(q: Record<string, string | undefined>): FiltresEtat {
 
 @Controller('etats')
 export class EtatsController {
-  constructor(private etats: EtatsService) {}
+  constructor(
+    private etats: EtatsService,
+    private rapportDistrict: RapportDistrictService,
+  ) {}
+
+  /** Rapport district (spec nov. 2026) : quantités, valorisation, dû aux fournisseurs. */
+  @Acces('rapports', 'LECTURE')
+  @Get('rapport-district')
+  rapportDistrictEtat(@Query() q: Record<string, string>) {
+    return this.rapportDistrict.rapport(filtres(q));
+  }
 
   @Acces('rapports', 'LECTURE')
   @Get('tableau-de-bord')

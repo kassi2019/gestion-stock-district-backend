@@ -66,31 +66,11 @@ export const NIVEAU_ACCES = {
 } as const;
 export type NiveauAcces = (typeof NIVEAU_ACCES)[keyof typeof NIVEAU_ACCES];
 
-/** Commande passée par le district à un fournisseur. */
-export const STATUT_COMMANDE_FOURNISSEUR = {
-  BROUILLON: 'BROUILLON',
-  VALIDEE: 'VALIDEE',
-  PARTIELLEMENT_RECUE: 'PARTIELLEMENT_RECUE',
-  RECUE: 'RECUE',
-  ANNULEE: 'ANNULEE',
-} as const;
-
 /** Statut générique des pièces : réceptions et livraisons. Le stock ne bouge qu'à VALIDEE. */
 export const STATUT_PIECE = {
   BROUILLON: 'BROUILLON',
   PREPAREE: 'PREPAREE',
   VALIDEE: 'VALIDEE',
-  ANNULEE: 'ANNULEE',
-} as const;
-
-/** Commande (demande de médicaments) faite par un centre de santé. */
-export const STATUT_COMMANDE_CENTRE = {
-  BROUILLON: 'BROUILLON',
-  SOUMISE: 'SOUMISE',
-  VALIDEE: 'VALIDEE',
-  PREPAREE: 'PREPAREE',
-  PARTIELLEMENT_LIVREE: 'PARTIELLEMENT_LIVREE',
-  LIVREE: 'LIVREE',
   ANNULEE: 'ANNULEE',
 } as const;
 
@@ -102,11 +82,39 @@ export const STATUT_RAPPORT = {
   FACTURE: 'FACTURE',
 } as const;
 
+/**
+ * Origine d'une facture-sortie (spec nov. 2026) :
+ *   RAPPORT  = générée à la validation du rapport centre (quantité validée) ;
+ *   MANUELLE = facture complémentaire en cours de mois (urgence, rupture).
+ */
+export const ORIGINE_FACTURE = {
+  RAPPORT: 'RAPPORT',
+  MANUELLE: 'MANUELLE',
+} as const;
+
+/** Clés des paramètres du rapport centre (table parametres). */
+export const PARAM_RAPPORT = {
+  /** N : nombre de mois de stock maximum (défaut 2) */
+  MOIS_STOCK_MAX: 'MOIS_STOCK_MAX',
+  /** Nombre de mois pour la CMM (défaut 3) */
+  MOIS_CMM: 'MOIS_CMM',
+  /** En-tête du rapport centre (fiche papier) : niveau de stock minimum, en mois (défaut 1) */
+  MOIS_STOCK_MIN: 'MOIS_STOCK_MIN',
+  /** En-tête du rapport centre : point de commande urgente, en mois (défaut 0,5) */
+  MOIS_POINT_COMMANDE_URGENTE: 'MOIS_POINT_COMMANDE_URGENTE',
+  /** En-tête du rapport centre : délai de réapprovisionnement, en mois (défaut 1) */
+  DELAI_REAPPRO_MOIS: 'DELAI_REAPPRO_MOIS',
+  /** 'true' dès que le premier rapport centre est validé : l'inventaire initial n'est plus modifiable */
+  INVENTAIRE_INITIAL_VERROUILLE: 'INVENTAIRE_INITIAL_VERROUILLE',
+} as const;
+
 /** Origine de la facture. */
 export const TYPE_FACTURE = {
   CONSOMMATION: 'CONSOMMATION',
   ECART_SUPERVISION: 'ECART_SUPERVISION',
   AVOIR: 'AVOIR',
+  /** Spec nov. 2026 : sortie du district vers un centre (le stock du district diminue) */
+  SORTIE: 'SORTIE',
 } as const;
 
 /** État de paiement d'une facture (calculé à partir des paiements imputés). */
@@ -169,6 +177,12 @@ export const TYPE_MOUVEMENT_CENTRE = {
   CONSOMMATION: 'CONSOMMATION',
   ECART_SUPERVISION: 'ECART_SUPERVISION',
   REGULARISATION: 'REGULARISATION',
+  /** Stock de départ saisi à la mise en service (écart avec le stock précédent) */
+  INVENTAIRE_INITIAL: 'INVENTAIRE_INITIAL',
+  /** Rapport centre : pertes / périmés déclarés */
+  PERTE: 'PERTE',
+  /** Rapport centre : transfert reçu d'un autre centre (+) ou cédé (-) */
+  TRANSFERT: 'TRANSFERT',
 } as const;
 
 /** Préfixes de numérotation des documents (ex. FAC-2026-00001). */
@@ -176,8 +190,6 @@ export const TYPE_COMPTEUR = {
   FACTURE: 'FAC',
   BON_LIVRAISON: 'BL',
   BON_RECEPTION: 'BR',
-  COMMANDE_FOURNISSEUR: 'BCF',
-  COMMANDE_CENTRE: 'CMD',
   RECU: 'REC',
   RAPPORT: 'RCM',
   SUPERVISION: 'SUP',

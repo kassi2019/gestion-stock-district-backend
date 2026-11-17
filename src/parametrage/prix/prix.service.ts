@@ -191,6 +191,36 @@ export class PrixService {
     return prixGeneral ? prixGeneral.prix : null;
   }
 
+  /**
+   * Prix d'ACHAT applicable à un médicament, à une date donnée.
+   * Ordre de recherche :
+   *   1. prix propre au fournisseur (si un fournisseur est indiqué) valable à cette date ;
+   *   2. sinon, prix général (sans fournisseur) valable à cette date ;
+   *   3. sinon, le prix le plus récent valable à cette date, quel que soit le fournisseur.
+   * Retourne null si aucun prix n'est défini.
+   *
+   * ➜ Utilisée par les modules Réception (prix repris des paramètres, non
+   *   modifiable), Facturation et Rapport district (prix d'achat figé).
+   */
+  async prixAchatApplicable(medicamentId: number, date: Date, fournisseurId?: number | null) {
+    const valableALaDate = {
+      medicamentId,
+      dateEffet: { lte: date },
+      OR: [{ dateFin: null }, { dateFin: { gte: date } }],
+    };
+    const ordre = { dateEffet: 'desc' as const };
+
+    if (fournisseurId) {
+      const prixFournisseur = await this.prisma.prixAchat.findFirst({ where: { ...valableALaDate, fournisseurId }, orderBy: ordre });
+      if (prixFournisseur) return prixFournisseur.prix;
+    }
+    const prixGeneral = await this.prisma.prixAchat.findFirst({ where: { ...valableALaDate, fournisseurId: null }, orderBy: ordre });
+    if (prixGeneral) return prixGeneral.prix;
+
+    const autre = await this.prisma.prixAchat.findFirst({ where: valableALaDate, orderBy: ordre });
+    return autre ? autre.prix : null;
+  }
+
   // ===========================================================================
   // CONTRÔLES COMMUNS
   // ===========================================================================

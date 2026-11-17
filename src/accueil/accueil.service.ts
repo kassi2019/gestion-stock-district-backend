@@ -16,9 +16,9 @@
  *     parametrage   médicaments actifs sans prix de vente (ATTENTION)
  *     stock         lots périmés, ruptures (URGENT) ; sous le seuil, péremption proche (ATTENTION)
  *     achats        réceptions à valider (ATTENTION) ; à réceptionner, brouillons (INFO)
- *     livraisons    commandes à valider / à livrer (ATTENTION) ; en préparation (INFO)
- *     consommations rapports du mois précédent MANQUANTS, rapports à valider (ATTENTION) ; brouillons (INFO)
- *     facturation   rapports validés à facturer (ATTENTION)
+ *     consommations rapports centre du mois précédent MANQUANTS ou non validés,
+ *                   rapports de mois terminés à valider (ATTENTION) ; brouillons (INFO)
+ *     facturation   anciens rapports validés à facturer (ATTENTION)
  *     paiements     factures EN RETARD (URGENT) ; autres factures non soldées (INFO)
  *     supervisions  à valider, décisions à prendre (ATTENTION) ; en cours (INFO)
  *
@@ -30,8 +30,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from '../stock/stock.service';
 import { aLeDroit, Permissions } from '../auth/droits';
 import {
-  STATUT_COMMANDE_CENTRE as SCC,
-  STATUT_COMMANDE_FOURNISSEUR as SCF,
   STATUT_FACTURE as SF,
   STATUT_PIECE as SP,
   STATUT_RAPPORT as SR,
@@ -111,68 +109,41 @@ export class AccueilService {
       ]);
     }
 
-    // ----- ACHATS -----
+    // ----- RÉCEPTION FOURNISSEURS -----
     if (voit('achats')) {
-      const [brouillons, aReceptionner, receptions] = await Promise.all([
-        this.prisma.commandeFournisseur.count({ where: { statut: SCF.BROUILLON } }),
-        this.prisma.commandeFournisseur.count({ where: { statut: { in: [SCF.VALIDEE, SCF.PARTIELLEMENT_RECUE] } } }),
-        this.prisma.reception.count({ where: { statut: SP.BROUILLON } }),
-      ]);
-      enAttente.achats = badge([
-        [receptions, 'réception(s) à valider', 'ATTENTION'],
-        [aReceptionner, 'commande(s) à réceptionner', 'INFO'],
-        [brouillons, 'commande(s) en brouillon', 'INFO'],
-      ]);
+      const receptions = await this.prisma.reception.count({ where: { statut: SP.BROUILLON } });
+      enAttente.achats = badge([[receptions, 'réception(s) à valider', 'ATTENTION']]);
     }
 
-    // ----- COMMANDES ET LIVRAISONS AUX CENTRES -----
-    if (voit('livraisons')) {
-      const [aValider, aLivrer, enPreparation] = await Promise.all([
-        this.prisma.commandeCentre.count({ where: { statut: { in: [SCC.BROUILLON, SCC.SOUMISE] } } }),
-        this.prisma.commandeCentre.count({ where: { statut: { in: [SCC.VALIDEE, SCC.PARTIELLEMENT_LIVREE] } } }),
-        this.prisma.livraison.count({ where: { statut: SP.BROUILLON } }),
-      ]);
-      enAttente.livraisons = badge([
-        [aValider, 'commande(s) à valider', 'ATTENTION'],
-        [aLivrer, 'commande(s) à livrer', 'ATTENTION'],
-        [enPreparation, 'livraison(s) en préparation', 'INFO'],
-      ]);
-    }
-
-    // ----- RAPPORTS DE CONSOMMATION -----
+    // ----- RAPPORTS CENTRE (spec nov. 2026) -----
     if (voit('consommations')) {
-      // Mois précédent : chaque centre actif DÉJÀ LIVRÉ avant la fin de ce mois
-      // doit avoir transmis son rapport (un centre jamais livré n'a rien à déclarer)
+      // Mois précédent : chaque centre actif SUIVI (inventaire initial saisi ou
+      // rapport centre déjà ouvert) doit avoir un rapport VALIDÉ pour ce mois.
       const maintenant = new Date();
       const precedent = new Date(maintenant.getFullYear(), maintenant.getMonth() - 1, 1);
-      const debutMoisCourant = new Date(Date.UTC(maintenant.getFullYear(), maintenant.getMonth(), 1));
-      const [soumis, brouillons, centresLivres, recus] = await Promise.all([
-        this.prisma.rapportConsommation.findMany({ where: { statut: SR.SOUMIS }, select: { montantTotal: true } }),
-        this.prisma.rapportConsommation.count({ where: { statut: SR.BROUILLON } }),
-        this.prisma.livraison.findMany({
-          where: { statut: SP.VALIDEE, dateLivraison: { lt: debutMoisCourant }, centre: { actif: true } },
-          select: { centreId: true },
-          distinct: ['centreId'],
-        }),
+      const rangCourant = maintenant.getFullYear() * 12 + maintenant.getMonth();
+      const [brouillons, avecInventaire, avecRapport, valides] = await Promise.all([
+        this.prisma.rapportConsommation.findMany({ where: { nouveauCircuit: true, statut: SR.BROUILLON }, select: { annee: true, mois: true } }),
+        this.prisma.inventaireInitial.findMany({ where: { centreId: { not: null }, centre: { actif: true } }, select: { centreId: true }, distinct: ['centreId'] }),
+        this.prisma.rapportConsommation.findMany({ where: { nouveauCircuit: true, centre: { actif: true } }, select: { centreId: true }, distinct: ['centreId'] }),
         this.prisma.rapportConsommation.findMany({
-          where: { annee: precedent.getFullYear(), mois: precedent.getMonth() + 1 },
+          where: { nouveauCircuit: true, statut: SR.VALIDE, annee: precedent.getFullYear(), mois: precedent.getMonth() + 1 },
           select: { centreId: true },
         }),
       ]);
       const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
       const nomMois = MOIS[precedent.getMonth()];
       const deMois = /^[aeiouyéèh]/i.test(nomMois) ? `d'${nomMois}` : `de ${nomMois}`;
-      const ontDeclare = new Set(recus.map((r) => r.centreId));
-      const manquants = centresLivres.filter((c) => !ontDeclare.has(c.centreId)).length;
-      indicateurs.rapports = {
-        aValider: soumis.length,
-        montant: soumis.reduce((t, r) => t + Number(r.montantTotal), 0),
-        brouillons,
-      };
+      const suivis = new Set([...avecInventaire, ...avecRapport].map((c) => c.centreId as number));
+      const ontValide = new Set(valides.map((r) => r.centreId));
+      const manquants = [...suivis].filter((id) => !ontValide.has(id)).length;
+      // Brouillons d'un mois terminé : ils peuvent (et doivent) être validés
+      const aValider = brouillons.filter((r) => r.annee * 12 + (r.mois - 1) < rangCourant).length;
+      indicateurs.rapports = { aValider, montant: 0, brouillons: brouillons.length - aValider };
       enAttente.consommations = badge([
-        [manquants, `rapport(s) ${deMois} manquant(s)`, 'ATTENTION'],
-        [soumis.length, 'rapport(s) à valider', 'ATTENTION'],
-        [brouillons, 'brouillon(s)', 'INFO'],
+        [manquants, `rapport(s) ${deMois} manquant(s) ou non validé(s)`, 'ATTENTION'],
+        [aValider, 'rapport(s) de mois terminé à valider', 'ATTENTION'],
+        [brouillons.length - aValider, 'rapport(s) du mois en cours', 'INFO'],
       ]);
     }
 
@@ -198,8 +169,9 @@ export class AccueilService {
       }
     }
     if (voit('facturation')) {
-      const aFacturer = await this.prisma.rapportConsommation.count({ where: { statut: SR.VALIDE } });
-      enAttente.facturation = badge([[aFacturer, 'rapport(s) validé(s) à facturer', 'ATTENTION']]);
+      // Ancien circuit seulement : les rapports centre génèrent leur facture à la validation
+      const aFacturer = await this.prisma.rapportConsommation.count({ where: { statut: SR.VALIDE, nouveauCircuit: false, facture: { is: null } } });
+      enAttente.facturation = badge([[aFacturer, 'ancien(s) rapport(s) validé(s) à facturer', 'ATTENTION']]);
     }
 
     // ----- SUPERVISIONS -----

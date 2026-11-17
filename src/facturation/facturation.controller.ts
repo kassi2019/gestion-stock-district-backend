@@ -8,7 +8,9 @@
  *   GET   /api/facturation/factures               liste (?centreId=&statut=&du=&au=&nonSoldees=1)
  *   GET   /api/facturation/factures/:id           une facture (lignes, paiements imputés)
  *   GET   /api/facturation/a-facturer             rapports validés non facturés
- *   POST  /api/facturation/factures/generer       { rapportIds, dateEmission? }   (Modifier)
+ *   GET   /api/facturation/sortie-infos           stock district + prix de vente (?centreId=&date=&medicamentIds=1,2)
+ *   POST  /api/facturation/factures/manuelle      facture-sortie manuelle { centreId, dateEmission, lignes } (Modifier)
+ *   POST  /api/facturation/factures/generer       { rapportIds, dateEmission? } — ancien circuit (Modifier)
  *   POST  /api/facturation/factures/:id/annuler   { motif }                       (Modifier)
  *
  * PAIEMENTS ET COMPTES (module « paiements ») :
@@ -28,8 +30,11 @@ import { Acces } from '../auth/droits';
 import { UtilisateurCourant } from '../auth/current-user.decorator';
 import { UtilisateurConnecte } from '../auth/jwt.strategy';
 import { FacturesService } from './factures.service';
+import { SortiesService } from './sorties.service';
+import { ORIGINE_FACTURE } from '../common/constants';
+import { texteVersDate } from '../common/dates';
 import { PaiementsService } from './paiements.service';
-import { AnnulerDto, CreerPaiementDto, GenererFacturesDto, ImputerDto } from './facturation.dto';
+import { AnnulerDto, CreerFactureManuelleDto, CreerPaiementDto, GenererFacturesDto, ImputerDto } from './facturation.dto';
 
 function nombre(valeur?: string) {
   return valeur ? Number(valeur) : undefined;
@@ -37,7 +42,29 @@ function nombre(valeur?: string) {
 
 @Controller('facturation')
 export class FacturationController {
-  constructor(private factures: FacturesService) {}
+  constructor(
+    private factures: FacturesService,
+    private sorties: SortiesService,
+  ) {}
+
+  /** Stock disponible au district et prix de vente, pour l'écran de saisie. */
+  @Acces('facturation', 'LECTURE')
+  @Get('sortie-infos')
+  sortieInfos(@Query('medicamentIds') medicamentIds?: string, @Query('centreId') centreId?: string, @Query('date') date?: string) {
+    const ids = (medicamentIds || '').split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    return this.sorties.infos(ids, nombre(centreId), date ? texteVersDate(date) : new Date());
+  }
+
+  /** Facture MANUELLE : sortie immédiate du stock du district. */
+  @Acces('facturation', 'MODIFICATION')
+  @Post('factures/manuelle')
+  async creerManuelle(@Body() dto: CreerFactureManuelleDto, @UtilisateurCourant() moi: UtilisateurConnecte) {
+    const id = await this.sorties.creer(
+      { centreId: dto.centreId, dateEmission: texteVersDate(dto.dateEmission), origine: ORIGINE_FACTURE.MANUELLE, lignes: dto.lignes },
+      moi.id,
+    );
+    return this.factures.trouver(id);
+  }
 
   @Acces('facturation', 'LECTURE')
   @Get('factures')

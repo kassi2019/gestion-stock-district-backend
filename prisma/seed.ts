@@ -58,6 +58,12 @@ const parametres = [
   { cle: 'VALORISATION_ECARTS', valeur: 'PRIX_VENTE', description: 'Prix utilisé pour valoriser les écarts de supervision (PRIX_VENTE ou PRIX_ACHAT)' },
   { cle: 'DELAI_PAIEMENT_JOURS', valeur: '30', description: 'Délai de paiement des factures (jours après émission)' },
   { cle: 'SORTIE_AUTO_PERIMES', valeur: 'true', description: 'Sortir automatiquement du stock, chaque nuit, les lots périmés' },
+  // Rapport centre de santé : quantité à livrer = N x CMM - SDU (minimum 0)
+  { cle: 'MOIS_STOCK_MAX', valeur: '2', description: 'Nombre de mois de stock maximum (N) : quantité à livrer = N x CMM - SDU' },
+  { cle: 'MOIS_CMM', valeur: '3', description: 'Nombre de mois pour le calcul de la consommation mensuelle moyenne (CMM)' },
+  { cle: 'MOIS_STOCK_MIN', valeur: '1', description: 'Niveau de stock minimum (en mois de consommation)' },
+  { cle: 'MOIS_POINT_COMMANDE_URGENTE', valeur: '0.5', description: 'Point de commande urgente (en mois de consommation)' },
+  { cle: 'DELAI_REAPPRO_MOIS', valeur: '1', description: 'Délai de réapprovisionnement des centres (en mois)' },
   // Informations du district (Paramètres généraux > Informations du district)
   { cle: 'DISTRICT_CODE', valeur: '', description: 'Code du district' },
   { cle: 'DISTRICT_REGION', valeur: '', description: 'Région sanitaire' },

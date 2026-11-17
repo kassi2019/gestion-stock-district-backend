@@ -37,9 +37,9 @@ export const TAILLE_MAX_PIECE = 10 * 1024 * 1024; // 10 Mo
  * Documents auxquels on peut joindre des pièces, PAR MODULE : chaque module
  * n'accède qu'aux pièces de SES documents (selon les droits de ce module).
  */
-export const PIECES_ACHATS = ['CommandeFournisseur', 'Reception'] as const;
+export const PIECES_ACHATS = ['Reception'] as const;
 export const PIECES_STOCK = ['MouvementStock'] as const;
-export const PIECES_LIVRAISONS = ['CommandeCentre', 'Livraison'] as const;
+export const PIECES_LIVRAISONS = ['Livraison'] as const;
 export const PIECES_CONSOMMATIONS = ['RapportConsommation'] as const;
 export const PIECES_SUPERVISIONS = ['Supervision'] as const;
 export const ENTITES_AVEC_PIECES = [...PIECES_ACHATS, ...PIECES_STOCK, ...PIECES_LIVRAISONS, ...PIECES_CONSOMMATIONS, ...PIECES_SUPERVISIONS] as const;
@@ -155,10 +155,8 @@ export class PiecesJointesService {
   /** Vérifie que le document existe. */
   private async verifierDocument(entiteType: string, entiteId: number) {
     const recherches: Record<string, () => Promise<unknown>> = {
-      CommandeFournisseur: () => this.prisma.commandeFournisseur.findUnique({ where: { id: entiteId } }),
       Reception: () => this.prisma.reception.findUnique({ where: { id: entiteId } }),
       MouvementStock: () => this.prisma.mouvementStock.findUnique({ where: { id: entiteId } }),
-      CommandeCentre: () => this.prisma.commandeCentre.findUnique({ where: { id: entiteId } }),
       Livraison: () => this.prisma.livraison.findUnique({ where: { id: entiteId } }),
       RapportConsommation: () => this.prisma.rapportConsommation.findUnique({ where: { id: entiteId } }),
       Supervision: () => this.prisma.supervision.findUnique({ where: { id: entiteId } }),

@@ -10,13 +10,17 @@
  *   2. ajoute le préfixe "/api" devant toutes les routes ;
  *   3. autorise le frontend à appeler l'API (CORS) ;
  *   4. active la validation automatique des données reçues ;
- *   5. démarre le serveur sur le port défini dans le fichier .env.
+ *   5. sert aussi le frontend compilé (mise en ligne sur un seul serveur) ;
+ *   6. démarre le serveur sur le port défini dans le fichier .env.
  * =============================================================================
  */
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { join } from 'path';
+import { existsSync } from 'fs';
+import type { Request, Response, NextFunction } from 'express';
 
 async function demarrer() {
   // 1. Création de l'application
@@ -42,10 +46,36 @@ async function demarrer() {
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
   );
 
-  // 5. Démarrage du serveur.
-  //    '0.0.0.0' = l'API est joignable depuis les autres postes du réseau local.
+  // 5. Mise en ligne sur un seul serveur : l'API sert aussi le frontend compilé.
+  //    Après "npm run build" dans stock-district-frontend, le dossier dist/
+  //    est servi ici. Ainsi http://SERVEUR:3000 affiche l'application et
+  //    http://SERVEUR:3000/api répond aux appels : un seul programme à lancer.
+  //    Dossier modifiable avec la variable DOSSIER_FRONTEND du .env.
+  const dossierFrontend =
+    process.env.DOSSIER_FRONTEND || join(process.cwd(), '..', 'stock-district-frontend', 'dist');
+  if (existsSync(join(dossierFrontend, 'index.html'))) {
+    // Fichiers du frontend (JS, CSS, images...)
+    app.useStaticAssets(dossierFrontend);
+    // Toute adresse qui n'est ni l'API ni un fichier (ex. /stock, /achats)
+    // renvoie index.html : c'est Vue Router qui affiche ensuite la bonne page.
+    app.use((req: Request, res: Response, suite: NextFunction) => {
+      if (req.method === 'GET' && !req.path.startsWith('/api')) {
+        return res.sendFile(join(dossierFrontend, 'index.html'));
+      }
+      suite();
+    });
+    console.log(`Frontend servi depuis : ${dossierFrontend}`);
+  } else {
+    console.log('Frontend non compilé (dist/ absent) : seule l\'API est servie.');
+  }
+
+  // 6. Démarrage du serveur.
+  //    Variable HOTE du .env :
+  //    - '0.0.0.0' (par défaut) = joignable depuis les autres postes du réseau local ;
+  //    - '127.0.0.1' (sur le serveur en ligne) = joignable seulement par Nginx,
+  //      le port n'est pas ouvert sur Internet.
   const port = Number(process.env.PORT || 3000);
-  await app.listen(port, '0.0.0.0');
+  await app.listen(port, process.env.HOTE || '0.0.0.0');
   console.log(`API démarrée sur http://localhost:${port}/api`);
 }
 

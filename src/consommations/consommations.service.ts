@@ -35,7 +35,7 @@ import { STATUT_RAPPORT, TYPE_COMPTEUR, TYPE_MOUVEMENT_CENTRE } from '../common/
 import { texteVersDate } from '../common/dates';
 import { prochainNumero } from '../common/numerotation';
 import { PrixService } from '../parametrage/prix/prix.service';
-import { CreerRapportDto, LigneConsommationDto, ModifierRapportDto, VerifierRapportDto } from './consommations.dto';
+import { LigneConsommationDto, ModifierRapportDto, VerifierRapportDto } from './consommations.dto';
 
 const S = STATUT_RAPPORT;
 
@@ -98,6 +98,7 @@ export class ConsommationsService {
         ...(filtres.annee ? { annee: filtres.annee } : {}),
         ...(filtres.mois ? { mois: filtres.mois } : {}),
         ...(filtres.statut ? { statut: filtres.statut } : {}),
+        nouveauCircuit: false, // anciens rapports seulement
       },
       include: {
         centre: { select: { id: true, code: true, nom: true } },
@@ -118,6 +119,8 @@ export class ConsommationsService {
   async trouver(id: number) {
     const rapport = await this.prisma.rapportConsommation.findUnique({ where: { id }, include: INCLURE_DETAIL });
     if (!rapport) throw new NotFoundException('Rapport introuvable.');
+    // Les rapports du NOUVEAU circuit se gèrent dans RapportsCentreService
+    if (rapport.nouveauCircuit) throw new BadRequestException(`Le rapport ${rapport.numero} est un rapport centre (nouveau circuit) : ouvrez-le dans « Rapports centre ».`);
     const stocks = await this.prisma.stockCentre.findMany({
       where: { centreId: rapport.centreId, medicamentId: { in: rapport.lignes.map((l) => l.medicamentId) } },
     });
@@ -162,33 +165,6 @@ export class ConsommationsService {
   // ===========================================================================
   // SAISIE (BROUILLON)
   // ===========================================================================
-
-  async creer(dto: CreerRapportDto, utilisateurId: number) {
-    await this.verifierCentre(dto.centreId);
-    this.verifierPeriode(dto.annee, dto.mois);
-    await this.verifierUnicite(dto.centreId, dto.annee, dto.mois);
-    const lignes = await this.valoriser(dto.lignes, dto.centreId, dto.annee, dto.mois);
-
-    const id = await this.prisma.$transaction(async (tx) => {
-      const numero = await prochainNumero(tx, TYPE_COMPTEUR.RAPPORT, new Date());
-      const rapport = await tx.rapportConsommation.create({
-        data: {
-          numero,
-          centreId: dto.centreId,
-          annee: dto.annee,
-          mois: dto.mois,
-          observations: dto.observations,
-          statut: S.BROUILLON,
-          utilisateurId,
-          montantTotal: arrondi(lignes.reduce((t, l) => t + l.montant, 0)),
-          lignes: { create: lignes },
-        },
-      });
-      await this.audit.enregistrer({ utilisateurId, action: 'CREATION', entite: 'RapportConsommation', entiteId: rapport.id, apres: { ...rapport, lignes } }, tx);
-      return rapport.id;
-    });
-    return this.trouver(id);
-  }
 
   /** Modification d'un rapport EN BROUILLON (lignes remplacées, prix recalculés). */
   async modifier(id: number, dto: ModifierRapportDto, utilisateurId: number) {

@@ -26,46 +26,6 @@ import {
 } from 'class-validator';
 
 // -----------------------------------------------------------------------------
-// COMMANDES FOURNISSEURS
-// -----------------------------------------------------------------------------
-
-export class LigneCommandeDto {
-  @IsInt({ message: 'Choisissez le médicament' })
-  medicamentId!: number;
-
-  @Type(() => Number)
-  @IsInt({ message: 'La quantité doit être un nombre entier' })
-  @Min(1, { message: 'La quantité doit être au moins 1' })
-  quantite!: number;
-
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 }, { message: 'Le prix unitaire doit être un nombre' })
-  @Min(0, { message: 'Le prix unitaire ne peut pas être négatif' })
-  prixUnitaire!: number;
-}
-
-export class CreerCommandeDto {
-  @IsInt({ message: 'Choisissez le fournisseur' })
-  fournisseurId!: number;
-
-  /** Date de la commande, format AAAA-MM-JJ */
-  @IsDateString({}, { message: 'La date de commande n\'est pas valide' })
-  dateCommande!: string;
-
-  @IsOptional() @IsString() @MaxLength(2000)
-  observations?: string;
-
-  @IsArray()
-  @ArrayMinSize(1, { message: 'Ajoutez au moins un médicament à la commande' })
-  @ValidateNested({ each: true })
-  @Type(() => LigneCommandeDto)
-  lignes!: LigneCommandeDto[];
-}
-
-/** Modification d'une commande EN BROUILLON (les lignes sont remplacées). */
-export class ModifierCommandeDto extends PartialType(CreerCommandeDto) {}
-
-// -----------------------------------------------------------------------------
 // RÉCEPTIONS
 // -----------------------------------------------------------------------------
 
@@ -78,10 +38,8 @@ export class LigneReceptionDto {
   @Min(1, { message: 'La quantité reçue doit être au moins 1' })
   quantite!: number;
 
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 }, { message: 'Le prix unitaire doit être un nombre' })
-  @Min(0, { message: 'Le prix unitaire ne peut pas être négatif' })
-  prixUnitaire!: number;
+  // Pas de prix ici : le prix d'achat est REPRIS DES PARAMÈTRES (Paramétrage > Prix)
+  // par le serveur, et n'est pas modifiable à la saisie (spec nov. 2026).
 
   /** N° de lot (obligatoire à la validation si le médicament est suivi par lot) */
   @IsOptional() @IsString() @MaxLength(50)
@@ -93,13 +51,9 @@ export class LigneReceptionDto {
 }
 
 export class CreerReceptionDto {
-  /** Commande d'origine (facultatif : réception directe sans commande) */
-  @IsOptional() @IsInt()
-  commandeId?: number;
-
-  /** Fournisseur (repris de la commande si une commande est indiquée) */
-  @IsOptional() @IsInt()
-  fournisseurId?: number;
+  /** Fournisseur (liste des fournisseurs paramétrés). Plus de lien avec une commande. */
+  @IsInt({ message: 'Choisissez le fournisseur' })
+  fournisseurId!: number;
 
   @IsDateString({}, { message: 'La date de réception n\'est pas valide' })
   dateReception!: string;
