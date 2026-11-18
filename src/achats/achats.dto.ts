@@ -5,9 +5,9 @@
  * Commande fournisseur : un fournisseur, une date, des lignes
  *   (médicament, quantité, prix unitaire).
  * Réception : liée ou non à une commande ; des lignes (médicament, quantité,
- *   prix unitaire, n° de lot et date de péremption si disponibles).
- * Les quantités et prix sont exprimés dans l'UNITÉ DE VENTE du médicament
- * (boîte, flacon...), comme le stock et les prix du Paramétrage.
+ *   prix d'achat saisi, n° de lot, date de péremption, observation).
+ * Les quantités et prix sont exprimés dans l'UNITÉ DE COMPTAGE du médicament
+ * (boîte, plaquette, flacon...), comme le stock et les prix du Paramétrage.
  * =============================================================================
  */
 import { PartialType } from '@nestjs/mapped-types';
@@ -38,8 +38,16 @@ export class LigneReceptionDto {
   @Min(1, { message: 'La quantité reçue doit être au moins 1' })
   quantite!: number;
 
-  // Pas de prix ici : le prix d'achat est REPRIS DES PARAMÈTRES (Paramétrage > Prix)
-  // par le serveur, et n'est pas modifiable à la saisie (spec nov. 2026).
+  /**
+   * Prix d'achat SAISI pour cette réception (par unité de comptage).
+   * L'écran propose le dernier prix d'achat, mais l'utilisateur peut le changer :
+   * le prix varie selon le fournisseur et d'une livraison à l'autre.
+   * Il est enregistré sur la ligne de réception, PAS sur la fiche du médicament.
+   */
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 }, { message: "Le prix d'achat doit être un nombre" })
+  @Min(0, { message: "Le prix d'achat ne peut pas être négatif" })
+  prixUnitaire!: number;
 
   /** N° de lot (obligatoire à la validation si le médicament est suivi par lot) */
   @IsOptional() @IsString() @MaxLength(50)
@@ -48,6 +56,10 @@ export class LigneReceptionDto {
   /** Date de péremption, format AAAA-MM-JJ */
   @IsOptional() @IsDateString({}, { message: "La date de péremption n'est pas valide" })
   datePeremption?: string;
+
+  /** Observation propre à cette ligne (facultative) */
+  @IsOptional() @IsString() @MaxLength(500)
+  observation?: string;
 }
 
 export class CreerReceptionDto {

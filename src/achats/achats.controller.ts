@@ -5,7 +5,7 @@
  * Droit « Voir » sur le module Achats :
  *   GET   /api/achats/receptions                liste (?fournisseurId=&statut=&du=&au=)
  *   GET   /api/achats/receptions/:id            une réception avec ses lignes
- *   GET   /api/achats/prix-achat                prix d'achat repris des paramètres
+ *   GET   /api/achats/prix-achat                prix d'achat proposés (dernier prix)
  *                                               (?fournisseurId=&date=AAAA-MM-JJ&medicamentIds=1,2,3)
  *   GET   /api/achats/historique                historique des achats (?fournisseurId=&medicamentId=&du=&au=)
  *   GET   /api/achats/pieces/:type/:id          pièces jointes d'un document
@@ -71,7 +71,7 @@ export class AchatsController {
     return this.receptions.lister({ fournisseurId: nombre(fournisseurId), statut, du, au });
   }
 
-  /** Prix d'achat applicables (affichés, non modifiables, dans l'écran de saisie). */
+  /** Prix d'achat proposés par défaut dans l'écran de saisie (dernier prix d'achat ; modifiable). */
   @Acces('achats', 'LECTURE')
   @Get('prix-achat')
   prixAchat(

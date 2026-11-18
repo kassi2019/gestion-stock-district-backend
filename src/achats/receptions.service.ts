@@ -9,11 +9,16 @@
  * Il n'y a plus de commande : le district commande dans l'application
  * nationale.
  *
- * PRIX D'ACHAT : repris des paramètres (Paramétrage > Prix), JAMAIS saisi.
- *   - calculé par le serveur à l'enregistrement du brouillon (pour l'affichage) ;
- *   - recalculé et FIGÉ à la validation (les rapports passés ne changent pas
- *     si le prix change ensuite) ;
- *   - pas de prix défini = enregistrement refusé, avec un message clair.
+ * PRIX D'ACHAT : SAISI sur chaque ligne (retours de recette nov. 2026).
+ *   - l'écran propose par défaut le DERNIER PRIX D'ACHAT du médicament
+ *     (voir prixAchat() : dernière réception validée, sinon Paramétrage > Prix) ;
+ *   - l'utilisateur peut le modifier à chaque réception (le prix varie selon
+ *     le fournisseur et d'une livraison à l'autre) ;
+ *   - il est enregistré sur la LIGNE DE RÉCEPTION uniquement : la fiche du
+ *     médicament et les prix du Paramétrage ne changent pas.
+ *
+ * OBSERVATIONS : une observation générale (toute la réception / la facture)
+ * et une observation facultative par ligne.
  *
  * Cycle de vie :
  *   BROUILLON ──valider──► VALIDEE        (le STOCK du district augmente)
@@ -57,9 +62,6 @@ function montantTotal(lignes: { quantite: number; prixUnitaire: number }[]) {
 }
 
 const S = STATUT_PIECE;
-
-/** Ligne de réception avec son prix d'achat (repris des paramètres). */
-type LigneAvecPrix = LigneReceptionDto & { prixUnitaire: number };
 
 /** Informations renvoyées pour une réception (avec ses lignes). */
 const INCLURE_DETAIL = {
@@ -131,7 +133,7 @@ export class ReceptionsService {
   async creer(dto: CreerReceptionDto, utilisateurId: number) {
     await this.preparer(dto.fournisseurId, dto.lignes);
     const dateReception = texteVersDate(dto.dateReception);
-    const lignes = await this.ajouterPrix(dto.lignes, dto.fournisseurId, dateReception);
+    const lignes = dto.lignes; // chaque ligne porte son prix d'achat saisi
 
     const id = await this.prisma.$transaction(async (tx) => {
       const numero = await prochainNumero(tx, TYPE_COMPTEUR.BON_RECEPTION, dateReception);
@@ -163,20 +165,20 @@ export class ReceptionsService {
     const avant = await this.trouver(id);
     if (avant.statut !== S.BROUILLON) throw new BadRequestException('Seule une réception en brouillon peut être modifiée.');
 
-    // Lignes : celles envoyées, sinon celles déjà enregistrées.
-    // Les prix sont TOUJOURS recalculés (le fournisseur ou la date ont pu changer).
-    const lignesSaisies: LigneReceptionDto[] =
+    // Lignes : celles envoyées, sinon celles déjà enregistrées (avec leur prix saisi).
+    const lignes: LigneReceptionDto[] =
       dto.lignes ??
       avant.lignes.map((l) => ({
         medicamentId: l.medicamentId,
         quantite: l.quantite,
+        prixUnitaire: Number(l.prixUnitaire),
         numeroLot: l.numeroLot ?? undefined,
         datePeremption: l.datePeremption ? l.datePeremption.toISOString().substring(0, 10) : undefined,
+        observation: l.observation ?? undefined,
       }));
     const fournisseurId = dto.fournisseurId ?? avant.fournisseurId;
     const dateReception = dto.dateReception ? texteVersDate(dto.dateReception) : avant.dateReception;
-    await this.preparer(fournisseurId, lignesSaisies);
-    const lignes = await this.ajouterPrix(lignesSaisies, fournisseurId, dateReception);
+    await this.preparer(fournisseurId, lignes);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.ligneReception.deleteMany({ where: { receptionId: id } });
@@ -201,8 +203,8 @@ export class ReceptionsService {
   }
 
   /**
-   * VALIDATION : prix d'achat figés, puis entrée en stock (lots, stock du
-   * dépôt, mouvements). Irréversible (correction = ajustement tracé).
+   * VALIDATION : entrée en stock (lots, stock du dépôt, mouvements), au prix
+   * d'achat SAISI sur chaque ligne. Irréversible (correction = ajustement tracé).
    */
   async valider(id: number, utilisateurId: number) {
     const reception = await this.trouver(id);
@@ -218,23 +220,12 @@ export class ReceptionsService {
       }
     }
 
-    // Prix d'achat FIGÉS maintenant (repris des paramètres à la date de réception)
-    const prixFiges = new Map<number, number>();
-    for (const ligne of reception.lignes) {
-      if (!prixFiges.has(ligne.medicamentId)) {
-        const p = await this.prixObligatoire(ligne.medicamentId, ligne.medicament.designation, reception.fournisseurId, reception.dateReception);
-        prixFiges.set(ligne.medicamentId, p);
-      }
-    }
-
     await this.prisma.$transaction(async (tx) => {
       let total = 0;
       for (const ligne of reception.lignes) {
-        // 0. Prix figé sur la ligne
-        const prixUnitaire = prixFiges.get(ligne.medicamentId)!;
-        const montant = arrondi(ligne.quantite * prixUnitaire);
-        total += montant;
-        await tx.ligneReception.update({ where: { id: ligne.id }, data: { prixUnitaire, montant } });
+        // 0. Prix d'achat saisi sur la ligne (déjà enregistré avec le brouillon)
+        const prixUnitaire = Number(ligne.prixUnitaire);
+        total += arrondi(ligne.quantite * prixUnitaire);
 
         // 1. Lot (retrouvé ou créé)
         let lotId: number | null = null;
@@ -284,7 +275,7 @@ export class ReceptionsService {
         });
       }
 
-      // 5. Réception validée (montant total recalculé avec les prix figés)
+      // 5. Réception validée (montant total recalculé par sécurité)
       const apres = await tx.reception.update({
         where: { id },
         data: { statut: S.VALIDEE, validePar: utilisateurId, dateValidation: new Date(), montantTotal: arrondi(total) },
@@ -351,17 +342,46 @@ export class ReceptionsService {
   }
 
   /**
-   * Prix d'achat applicables, pour l'affichage dans l'écran de saisie
-   * (le prix n'y est pas modifiable). Renvoie { medicamentId: prix | null }.
+   * Prix d'achat PROPOSÉS par défaut dans l'écran de saisie (modifiables).
+   * Pour chaque médicament, on prend le DERNIER PRIX D'ACHAT, dans cet ordre :
+   *   1. dernière réception validée de ce médicament chez CE fournisseur ;
+   *   2. sinon, dernière réception validée chez n'importe quel fournisseur ;
+   *   3. sinon, le prix d'achat de Paramétrage > Prix à cette date ;
+   *   4. sinon null (l'utilisateur saisit le prix).
+   * Renvoie { medicamentId: prix | null }.
    */
   async prixAchat(medicamentIds: number[], fournisseurId?: number, date?: string) {
     const jour = date ? texteVersDate(date) : new Date();
     const resultat: Record<number, number | null> = {};
     for (const id of medicamentIds) {
+      const dernier = await this.dernierPrixReception(id, fournisseurId);
+      if (dernier !== null) {
+        resultat[id] = dernier;
+        continue;
+      }
       const p = await this.prix.prixAchatApplicable(id, jour, fournisseurId);
       resultat[id] = p === null ? null : Number(p);
     }
     return resultat;
+  }
+
+  /** Prix de la dernière réception VALIDÉE du médicament (chez ce fournisseur d'abord), sinon null. */
+  private async dernierPrixReception(medicamentId: number, fournisseurId?: number) {
+    const plusRecente = [{ reception: { dateReception: 'desc' as const } }, { id: 'desc' as const }];
+    if (fournisseurId) {
+      const chezFournisseur = await this.prisma.ligneReception.findFirst({
+        where: { medicamentId, reception: { statut: S.VALIDEE, fournisseurId } },
+        orderBy: plusRecente,
+        select: { prixUnitaire: true },
+      });
+      if (chezFournisseur) return Number(chezFournisseur.prixUnitaire);
+    }
+    const tousFournisseurs = await this.prisma.ligneReception.findFirst({
+      where: { medicamentId, reception: { statut: S.VALIDEE } },
+      orderBy: plusRecente,
+      select: { prixUnitaire: true },
+    });
+    return tousFournisseurs ? Number(tousFournisseurs.prixUnitaire) : null;
   }
 
   // ===========================================================================
@@ -389,39 +409,17 @@ export class ReceptionsService {
     if (!fournisseur) throw new NotFoundException('Fournisseur introuvable.');
     if (!fournisseur.actif) throw new BadRequestException(`Le fournisseur « ${fournisseur.raisonSociale} » est désactivé.`);
   }
-
-  /** Ajoute à chaque ligne son prix d'achat repris des paramètres (refus si un prix manque). */
-  private async ajouterPrix(lignes: LigneReceptionDto[], fournisseurId: number, date: Date): Promise<LigneAvecPrix[]> {
-    const medicaments = await this.prisma.medicament.findMany({
-      where: { id: { in: lignes.map((l) => l.medicamentId) } },
-      select: { id: true, designation: true },
-    });
-    const resultat: LigneAvecPrix[] = [];
-    for (const l of lignes) {
-      const nom = medicaments.find((m) => m.id === l.medicamentId)?.designation ?? 'Médicament';
-      resultat.push({ ...l, prixUnitaire: await this.prixObligatoire(l.medicamentId, nom, fournisseurId, date) });
-    }
-    return resultat;
-  }
-
-  /** Prix d'achat applicable ; erreur explicite s'il n'est pas défini dans les paramètres. */
-  private async prixObligatoire(medicamentId: number, designation: string, fournisseurId: number, date: Date) {
-    const p = await this.prix.prixAchatApplicable(medicamentId, date, fournisseurId);
-    if (p === null) {
-      throw new BadRequestException(`« ${designation} » n'a pas de prix d'achat à cette date : définissez-le dans Paramétrage > Prix.`);
-    }
-    return Number(p);
-  }
 }
 
-/** Ligne prête pour la base (montant = quantité × prix). */
-function versLigne(l: LigneAvecPrix) {
+/** Ligne prête pour la base (montant = quantité × prix d'achat saisi). */
+function versLigne(l: LigneReceptionDto) {
   return {
     medicamentId: l.medicamentId,
     quantite: l.quantite,
-    prixUnitaire: l.prixUnitaire,
+    prixUnitaire: arrondi(l.prixUnitaire),
     montant: arrondi(l.quantite * l.prixUnitaire),
     numeroLot: l.numeroLot?.trim() || null,
     datePeremption: l.datePeremption ? texteVersDate(l.datePeremption) : null,
+    observation: l.observation?.trim() || null,
   };
 }

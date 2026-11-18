@@ -34,7 +34,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { TYPE_MOUVEMENT_DEPOT } from '../common/constants';
+import { PARAM_RAPPORT, TYPE_MOUVEMENT_DEPOT } from '../common/constants';
 import { texteVersDate } from '../common/dates';
 import { ComptageDto, CreerMouvementDto, LigneComptageDto, RattacherDto } from './stock.dto';
 
@@ -84,9 +84,18 @@ export class StockService {
    * Stock par médicament (tous les médicaments, même à 0) :
    *   - lots          : lignes de stock avec une quantité (péremption la plus proche d'abord) ;
    *   - lignesStock   : TOUTES les lignes de stock, même à 0 (inventaire) ;
-   *   - valeur au prix d'achat / de vente actuels.
+   *   - valeur au prix d'achat / de vente actuels ;
+   *   - cmm           : consommation moyenne mensuelle du dépôt (voir cmmDuDepot) ;
+   *   - seuilAlerte   : seuil CALCULÉ à partir de la CMM (retours de recette nov. 2026) :
+   *                     seuil = CMM × « niveau de stock minimum (en mois) » (paramètre
+   *                     MOIS_STOCK_MIN, 1 par défaut), arrondi au supérieur.
+   *                     Stock <= seuil -> « sous le seuil ». CMM = 0 -> pas d'alerte
+   *                     (sauf rupture). Le seuil saisi sur la fiche médicament n'est
+   *                     plus utilisé pour les alertes.
+   *   Toutes les alertes (onglet Alertes, accueil, rapports) passent par ici.
    */
   async etat() {
+    const { cmmParMedicament, moisStockMin, moisCmm } = await this.cmmDuDepot();
     const medicaments = await this.prisma.medicament.findMany({
       include: {
         famille: { select: { id: true, libelle: true } },
@@ -115,8 +124,12 @@ export class StockService {
           quantite: s.quantite,
         }))
         .sort(parPeremption);
+      const cmm = cmmParMedicament.get(m.id) ?? 0;
       return {
         ...m,
+        cmm,
+        moisCmm, // nombre de mois de la moyenne (affiché en info-bulle)
+        seuilAlerte: Math.ceil(cmm * moisStockMin),
         stock,
         prixAchat: pa,
         prixVente: pv,
@@ -126,6 +139,43 @@ export class StockService {
         lignesStock: lignes,
       };
     });
+  }
+
+  /**
+   * CMM (consommation moyenne mensuelle) du DÉPÔT, calculée automatiquement :
+   *   CMM = sorties vers les centres (mouvements SORTIE_LIVRAISON : livraisons
+   *         et factures-sorties) des K derniers MOIS COMPLETS / K.
+   *   K = paramètre MOIS_CMM (« Nombre de mois pour la CMM », 3 par défaut).
+   *   Exemple le 18/11/2026 avec K = 3 : sorties du 01/08 au 31/10/2026, divisées par 3.
+   * Les ajustements, périmés et inventaires ne comptent PAS (ce n'est pas de la consommation).
+   * Renvoie aussi MOIS_STOCK_MIN (seuil d'alerte = CMM × ce nombre de mois).
+   */
+  private async cmmDuDepot() {
+    const parametres = await this.prisma.parametre.findMany({
+      where: { cle: { in: [PARAM_RAPPORT.MOIS_CMM, PARAM_RAPPORT.MOIS_STOCK_MIN] } },
+    });
+    const lire = (cle: string, defaut: number) => {
+      const v = Number((parametres.find((p) => p.cle === cle)?.valeur ?? '').replace(',', '.'));
+      return Number.isFinite(v) && v > 0 ? v : defaut;
+    };
+    const moisCmm = Math.max(1, Math.round(lire(PARAM_RAPPORT.MOIS_CMM, 3)));
+    const moisStockMin = lire(PARAM_RAPPORT.MOIS_STOCK_MIN, 1);
+
+    // Période : du 1er jour du mois (courant - K) au 1er jour du mois courant (exclu)
+    const maintenant = new Date();
+    const fin = new Date(Date.UTC(maintenant.getFullYear(), maintenant.getMonth(), 1));
+    const debut = new Date(Date.UTC(maintenant.getFullYear(), maintenant.getMonth() - moisCmm, 1));
+
+    const sorties = await this.prisma.mouvementStock.groupBy({
+      by: ['medicamentId'],
+      where: { type: T.SORTIE_LIVRAISON, dateMouvement: { gte: debut, lt: fin } },
+      _sum: { quantite: true },
+    });
+    const cmmParMedicament = new Map<number, number>();
+    for (const s of sorties) {
+      cmmParMedicament.set(s.medicamentId, Math.round(((s._sum.quantite ?? 0) / moisCmm) * 100) / 100);
+    }
+    return { cmmParMedicament, moisCmm, moisStockMin };
   }
 
   // ===========================================================================
@@ -161,6 +211,10 @@ export class StockService {
     });
     if (!medicament) throw new NotFoundException('Médicament introuvable.');
 
+    // CMM et seuil calculés (mêmes règles que l'état du stock), pour la fiche PDF
+    const { cmmParMedicament, moisStockMin } = await this.cmmDuDepot();
+    const cmm = cmmParMedicament.get(medicamentId) ?? 0;
+
     const mouvements = await this.prisma.mouvementStock.findMany({
       where: { medicamentId, ...periode(du, au) },
       include: {
@@ -191,7 +245,8 @@ export class StockService {
     const sorties = mouvements.filter((m) => TYPES_SORTIE.includes(m.type)).reduce((t, m) => t + m.quantite, 0);
 
     return {
-      medicament,
+      // seuilAlerte remplacé par le seuil calculé à partir de la CMM
+      medicament: { ...medicament, cmm, seuilAlerte: Math.ceil(cmm * moisStockMin) },
       stockInitial,
       entrees,
       sorties,

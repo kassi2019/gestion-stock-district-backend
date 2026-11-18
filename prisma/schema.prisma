@@ -353,8 +353,11 @@ model LigneReception {
   numeroLot      String?   @db.NVarChar(50)
   datePeremption DateTime? @db.Date
   quantite       Int
+  /// Prix d'achat SAISI à la réception (proposé : dernier prix d'achat ; modifiable)
   prixUnitaire   Decimal   @db.Decimal(18, 2)
   montant        Decimal   @db.Decimal(18, 2)
+  /// Observation propre à cette ligne (ex. « carton abîmé »), facultative
+  observation    String?   @db.NVarChar(500)
 
   reception  Reception  @relation(fields: [receptionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   medicament Medicament @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
