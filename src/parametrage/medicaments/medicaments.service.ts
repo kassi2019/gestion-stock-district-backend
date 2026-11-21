@@ -21,6 +21,11 @@
  *     dépôt + un mouvement de stock « Stock initial ». Ensuite le stock ne
  *     change que par les réceptions, livraisons, inventaires...
  *
+ * CODES-BARRES (scan des boîtes) : un médicament peut avoir plusieurs codes,
+ * un code n'appartient qu'à un seul médicament. Ils sont saisis à la création
+ * (codesBarres), ou rattachés ensuite (fiche du médicament, ou code inconnu
+ * scanné à la réception / à la facture). La recherche trouve aussi par code.
+ *
  * Règle : un médicament n'est jamais supprimé, on le désactive.
  * =============================================================================
  */
@@ -30,9 +35,13 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { traduireErreurPrisma } from '../../common/prisma-erreurs';
 import { codeOuAutomatique } from '../../common/codes-auto';
+import { normaliserCodeBarre } from '../../common/code-barre';
 import { aujourdhui, texteVersDate } from '../../common/dates';
 import { PrixService } from '../prix/prix.service';
 import { CreerMedicamentDto, ModifierMedicamentDto } from './medicaments.dto';
+
+/** Codes-barres renvoyés avec chaque médicament. */
+const CODES_BARRES = { select: { id: true, code: true }, orderBy: { id: 'asc' } } as const;
 
 @Injectable()
 export class MedicamentsService {
@@ -54,7 +63,14 @@ export class MedicamentsService {
         ...(actifsSeulement ? { actif: true } : {}),
         ...(familleId ? { familleId } : {}),
         ...(recherche
-          ? { OR: [{ code: { contains: recherche } }, { designation: { contains: recherche } }] }
+          ? {
+              OR: [
+                { code: { contains: recherche } },
+                { designation: { contains: recherche } },
+                // Recherche aussi par code-barres (saisi ou scanné)
+                { codesBarres: { some: { code: normaliserCodeBarre(recherche) } } },
+              ],
+            }
           : {}),
       },
       orderBy: { designation: 'asc' },
@@ -62,6 +78,7 @@ export class MedicamentsService {
         famille: true,
         forme: true,
         uniteVente: true,
+        codesBarres: CODES_BARRES,
         // Prix de vente GÉNÉRAL en cours (centreId vide, pas de date de fin)
         prixVente: { where: { centreId: null, dateFin: null }, take: 1 },
         // Dernier prix d'achat en cours
@@ -83,7 +100,7 @@ export class MedicamentsService {
   async trouver(id: number) {
     const medicament = await this.prisma.medicament.findUnique({
       where: { id },
-      include: { famille: true, forme: true, uniteVente: true },
+      include: { famille: true, forme: true, uniteVente: true, codesBarres: CODES_BARRES },
     });
     if (!medicament) throw new NotFoundException('Médicament introuvable.');
     return medicament;
@@ -91,8 +108,11 @@ export class MedicamentsService {
 
   async creer(dto: CreerMedicamentDto, utilisateurId: number) {
     // On sépare les colonnes du médicament des champs traités à part (prix, stock)
-    const { prixVente, prixAchat, fournisseurId, stockInitial, numeroLot, datePeremption, ...donnees } = dto;
+    const { prixVente, prixAchat, fournisseurId, stockInitial, numeroLot, datePeremption, codesBarres, ...donnees } = dto;
     const stock = stockInitial ?? 0;
+    // Codes-barres scannés : sans doublon, et pas déjà pris par un autre médicament
+    const codes = [...new Set(codesBarres ?? [])];
+    for (const c of codes) await this.verifierCodeLibre(c);
 
     // Médicament suivi par lot : le stock initial doit avoir un n° de lot
     if (stock > 0 && (donnees.suiviLot ?? true) && !numeroLot?.trim()) {
@@ -115,6 +135,11 @@ export class MedicamentsService {
         const uniteVenteId =
           donnees.uniteVenteId ?? (await tx.uniteVente.findUnique({ where: { code: 'BOITE' } }))?.id ?? null;
         const medicament = await tx.medicament.create({ data: { ...donnees, code, unite, uniteVenteId } });
+
+        // Codes-barres de la boîte
+        if (codes.length) {
+          await tx.codeBarre.createMany({ data: codes.map((c) => ({ code: c, medicamentId: medicament.id })) });
+        }
 
         // Prix de vente général, valable à partir d'aujourd'hui
         if (prixVente !== undefined && prixVente !== null) {
@@ -146,7 +171,7 @@ export class MedicamentsService {
             action: 'CREATION',
             entite: 'Medicament',
             entiteId: medicament.id,
-            apres: { ...medicament, prixVente, prixAchat, fournisseurId, stockInitial: stock, numeroLot, datePeremption },
+            apres: { ...medicament, prixVente, prixAchat, fournisseurId, stockInitial: stock, numeroLot, datePeremption, codesBarres: codes },
           },
           tx,
         );
@@ -162,8 +187,9 @@ export class MedicamentsService {
 
     // Le stock initial n'est utilisé qu'à la création : on l'ignore ici
     // (ensuite le stock change par réceptions, livraisons, inventaires...)
+    // (les codes-barres se modifient par leurs propres routes : ignorés ici aussi)
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { prixVente, prixAchat, fournisseurId, stockInitial, numeroLot, datePeremption, ...donnees } = dto;
+    const { prixVente, prixAchat, fournisseurId, stockInitial, numeroLot, datePeremption, codesBarres, ...donnees } = dto;
 
     let apres;
     try {
@@ -193,6 +219,64 @@ export class MedicamentsService {
     }
 
     return apres;
+  }
+
+  // ---------------------------------------------------------------------------
+  // CODES-BARRES
+  // ---------------------------------------------------------------------------
+
+  /** Médicament correspondant à un code-barres scanné (404 si le code est inconnu). */
+  async parCodeBarre(texte: string) {
+    const code = normaliserCodeBarre(texte);
+    const trouve = await this.prisma.codeBarre.findUnique({ where: { code } });
+    if (!trouve) throw new NotFoundException(`Code-barres inconnu : ${code}.`);
+    return { code, medicament: await this.trouver(trouve.medicamentId) };
+  }
+
+  /** Rattache un code-barres à un médicament (rien à faire s'il lui appartient déjà). */
+  async ajouterCodeBarre(medicamentId: number, code: string, utilisateurId: number) {
+    await this.trouver(medicamentId);
+    const dejaLa = await this.verifierCodeLibre(code, medicamentId);
+    if (dejaLa) return dejaLa;
+    const cree = await this.prisma.codeBarre.create({ data: { code, medicamentId } });
+    await this.audit.enregistrer({
+      utilisateurId,
+      action: 'AJOUT_CODE_BARRE',
+      entite: 'Medicament',
+      entiteId: medicamentId,
+      apres: { code },
+    });
+    return { id: cree.id, code: cree.code };
+  }
+
+  async retirerCodeBarre(medicamentId: number, codeId: number, utilisateurId: number) {
+    const c = await this.prisma.codeBarre.findUnique({ where: { id: codeId } });
+    if (!c || c.medicamentId !== medicamentId) throw new NotFoundException('Code-barres introuvable.');
+    await this.prisma.codeBarre.delete({ where: { id: codeId } });
+    await this.audit.enregistrer({
+      utilisateurId,
+      action: 'RETRAIT_CODE_BARRE',
+      entite: 'Medicament',
+      entiteId: medicamentId,
+      avant: { code: c.code },
+    });
+    return { message: 'Code-barres retiré.' };
+  }
+
+  /**
+   * Un code n'appartient qu'à UN médicament : erreur s'il est pris par un autre.
+   * Renvoie le code s'il appartient déjà à ce médicament (sinon null).
+   */
+  private async verifierCodeLibre(code: string, medicamentId?: number) {
+    const pris = await this.prisma.codeBarre.findUnique({
+      where: { code },
+      include: { medicament: { select: { designation: true } } },
+    });
+    if (!pris) return null;
+    if (pris.medicamentId !== medicamentId) {
+      throw new BadRequestException(`Le code-barres ${code} appartient déjà à « ${pris.medicament.designation} ».`);
+    }
+    return { id: pris.id, code: pris.code };
   }
 
   /**

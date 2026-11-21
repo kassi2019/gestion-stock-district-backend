@@ -22,6 +22,7 @@
  * Utilisation sur une route (voir acces.guard.ts) :
  *     @Acces('parametrage', 'LECTURE')       -> il faut le droit VOIR
  *     @Acces('parametrage', 'MODIFICATION')  -> il faut le droit MODIFIER
+ *     @Acces('parametrage|achats', 'MODIFICATION') -> MODIFIER sur L'UN de ces modules
  * (IMPRIMER est contrôlé à l'écran : les PDF sont fabriqués par le navigateur
  *  à partir des données déjà visibles.)
  * =============================================================================
@@ -86,8 +87,11 @@ export function lirePermissions(codeRole: string, texteJson: string | null | und
   return resultat;
 }
 
-/** Vrai si les droits donnés permettent ce niveau sur ce module (LECTURE = VOIR, MODIFICATION = MODIFIER). */
+/**
+ * Vrai si les droits donnés permettent ce niveau sur ce module (LECTURE = VOIR, MODIFICATION = MODIFIER).
+ * Plusieurs modules séparés par « | » (ex. 'parametrage|achats') : il suffit d'en avoir UN.
+ */
 export function aLeDroit(permissions: Permissions, module: string, niveau: NiveauAcces): boolean {
-  const droits = permissions[module] ?? [];
-  return droits.includes(niveau === NIVEAU_ACCES.MODIFICATION ? DROITS.MODIFIER : DROITS.VOIR);
+  const droitCherche = niveau === NIVEAU_ACCES.MODIFICATION ? DROITS.MODIFIER : DROITS.VOIR;
+  return module.split('|').some((m) => (permissions[m] ?? []).includes(droitCherche));
 }

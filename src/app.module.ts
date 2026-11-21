@@ -31,6 +31,7 @@ import { AccueilModule } from './accueil/accueil.module';
 import { FacturationModule } from './facturation/facturation.module';
 import { SupervisionsModule } from './supervisions/supervisions.module';
 import { EtatsModule } from './etats/etats.module';
+import { ScanDistantModule } from './scan-distant/scan-distant.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
@@ -72,6 +73,8 @@ import { AccesGuard } from './auth/acces.guard';
     SupervisionsModule,
     // 09 — Tableau de bord et états (lecture seule)
     EtatsModule,
+    // Scan des boîtes avec le téléphone, codes reçus sur le PC
+    ScanDistantModule,
     // Page d'accueil : chiffres clés et badges des tuiles
     AccueilModule,
 

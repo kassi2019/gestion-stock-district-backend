@@ -1,7 +1,9 @@
 /** Données attendues pour créer ou modifier un MÉDICAMENT du catalogue. */
 import { PartialType } from '@nestjs/mapped-types';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsInt,
@@ -9,9 +11,11 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   Min,
 } from 'class-validator';
+import { FORMAT_CODE_BARRE, MESSAGE_CODE_BARRE, normaliserCodeBarre } from '../../common/code-barre';
 
 export class CreerMedicamentDto {
   /** Code FACULTATIF : s'il est vide, un code est généré (voir common/codes-auto.ts) */
@@ -106,6 +110,22 @@ export class CreerMedicamentDto {
   /** Date de péremption du stock initial, format AAAA-MM-JJ. */
   @IsOptional() @IsDateString({}, { message: "La date de péremption n'est pas valide" })
   datePeremption?: string;
+
+  /**
+   * Codes-barres de la boîte (seulement à la CRÉATION ; ensuite on passe par
+   * POST /medicaments/:id/codes-barres). Nettoyés : voir common/code-barre.ts.
+   */
+  @IsOptional() @IsArray() @ArrayMaxSize(20)
+  @Transform(({ value }) => (Array.isArray(value) ? value.map(normaliserCodeBarre) : value))
+  @Matches(FORMAT_CODE_BARRE, { each: true, message: MESSAGE_CODE_BARRE })
+  codesBarres?: string[];
+}
+
+/** Code-barres à rattacher à un médicament existant. */
+export class CodeBarreDto {
+  @Transform(({ value }) => normaliserCodeBarre(value))
+  @Matches(FORMAT_CODE_BARRE, { message: MESSAGE_CODE_BARRE })
+  code!: string;
 }
 
 /** Modification : tous les champs facultatifs, + activer/désactiver. */

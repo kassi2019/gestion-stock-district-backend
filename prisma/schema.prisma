@@ -275,8 +275,25 @@ model Medicament {
   lignesInventaire   LigneInventaireDepot[]
   transfertsCentre   TransfertCentre[]
   inventaireInitial  InventaireInitial[]
+  /// Codes-barres de la boîte (EAN-13, Data Matrix...) : scannés à la création, à la réception et à la facture
+  codesBarres        CodeBarre[]
 
   @@map("medicaments")
+}
+
+/// Code-barres d'un médicament. Un médicament peut en avoir plusieurs (ancien et
+/// nouveau conditionnement, autre fabricant...) ; un code n'appartient qu'à UN médicament.
+model CodeBarre {
+  id           Int      @id @default(autoincrement())
+  /// Code nettoyé (sans espace, majuscules ; Data Matrix ramené à l'EAN-13 de la boîte)
+  code         String   @unique @db.NVarChar(50)
+  medicamentId Int
+  createdAt    DateTime @default(now())
+
+  medicament Medicament @relation(fields: [medicamentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([medicamentId])
+  @@map("codes_barres")
 }
 
 // -----------------------------------------------------------------------------
