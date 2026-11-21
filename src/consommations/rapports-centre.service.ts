@@ -747,9 +747,18 @@ export class RapportsCentreService {
     // CMM : consommations (ajustées) des (moisCmm - 1) mois précédents, quand le rapport existe
     const historiques = await this.historiques(db, rapport, moisCmm);
 
-    // Produits du rapport : tous ceux qui ont du stock au centre (SI), un reçu
-    // ou un transfert, plus ceux ajoutés à la main
+    // Stock théorique ACTUEL du centre (table stock_centre) : sert à lister aussi
+    // les produits en stock venus d'ailleurs (ancien circuit, supervisions...),
+    // pour que le gestionnaire n'ait pas à les ajouter un par un.
+    const stockActuel = await db.stockCentre.findMany({
+      where: { centreId, quantiteTheorique: { gt: 0 } },
+      select: { medicamentId: true },
+    });
+
+    // Produits du rapport : tous ceux qui ont du stock au centre (SI ou stock
+    // actuel), un reçu ou un transfert, plus ceux ajoutés à la main
     const ids = new Set<number>([...saisies.keys()]);
+    for (const s of stockActuel) ids.add(s.medicamentId);
     for (const [id, q] of si) if (q !== 0) ids.add(id);
     for (const [id, q] of r) if (q !== 0) ids.add(id);
     for (const [id, q] of t) if (q !== 0) ids.add(id);

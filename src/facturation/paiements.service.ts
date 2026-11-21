@@ -84,7 +84,31 @@ export class PaiementsService {
     const annulateur = paiement.annulePar
       ? await this.prisma.utilisateur.findUnique({ where: { id: paiement.annulePar }, select: { nom: true, prenoms: true } })
       : null;
-    return { ...paiement, annulateur };
+    return { ...paiement, annulateur, soldeApres: await this.soldeApresPaiement(paiement) };
+  }
+
+  /**
+   * SOLDE DU COMPTE DU CENTRE juste APRÈS ce paiement (imprimé sur le reçu) :
+   *   factures non annulées émises jusqu'à la date du paiement
+   *   - paiements non annulés jusqu'à ce paiement inclus (même jour : numéro d'ordre).
+   * Positif = reste dû par le centre ; négatif = avance en faveur du centre.
+   */
+  private async soldeApresPaiement(p: { id: number; centreId: number; datePaiement: Date }) {
+    const [factures, paiements] = await Promise.all([
+      this.prisma.facture.aggregate({
+        where: { centreId: p.centreId, statut: { not: SF.ANNULEE }, dateEmission: { lte: p.datePaiement } },
+        _sum: { montantTotal: true },
+      }),
+      this.prisma.paiement.aggregate({
+        where: {
+          centreId: p.centreId,
+          annule: false,
+          OR: [{ datePaiement: { lt: p.datePaiement } }, { datePaiement: p.datePaiement, id: { lte: p.id } }],
+        },
+        _sum: { montant: true },
+      }),
+    ]);
+    return arrondi(Number(factures._sum.montantTotal ?? 0) - Number(paiements._sum.montant ?? 0));
   }
 
   /** Factures NON SOLDÉES d'un centre (les plus anciennes d'abord) : pour répartir un paiement. */
